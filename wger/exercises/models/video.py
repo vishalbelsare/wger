@@ -23,6 +23,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+# Third Party
+from simple_history.models import HistoricalRecords
+
+# wger
+from wger.utils.cache import reset_exercise_api_cache
+
 
 try:
     # Third Party
@@ -32,24 +38,33 @@ except ImportError:
 
 # wger
 from wger.exercises.models import ExerciseBase
-from wger.utils.models import AbstractLicenseModel
+from wger.utils.models import (
+    AbstractHistoryMixin,
+    AbstractLicenseModel,
+)
+
+
+MAX_FILE_SIZE_MB = 100
 
 
 def validate_video(value):
+    if value.size > 1024 * 1024 * MAX_FILE_SIZE_MB:
+        raise ValidationError(_('Maximum file size is %(size)sMB.') % {'size': MAX_FILE_SIZE_MB})
 
-    if value.size > 1024 * 1024 * 100:
-        raise ValidationError(_('Maximum file size is 100MB.'))
+    # Editing existing video
+    if not hasattr(value.file, 'temporary_file_path'):
+        return
 
     if value.file.content_type not in ['video/mp4', 'video/webm', 'video/ogg']:
-        raise ValidationError(_('File type is not supported'))
-
-    # If ffmpeg can't read the file, it will raise an exception
-    if not hasattr(value.file, 'temporary_file_path'):
         raise ValidationError(_('File type is not supported'))
 
     # ffmpeg is not installed, skip
     if not ffmpeg:
         return
+
+    # ffmpeg needs to access this
+    if not hasattr(value.file, 'temporary_file_path'):
+        raise ValidationError(_('File type is not supported'))
 
     try:
         ffmpeg.probe(value.file.temporary_file_path())
@@ -62,10 +77,10 @@ def exercise_video_upload_dir(instance, filename):
     Returns the upload target for exercise videos
     """
     ext = pathlib.Path(filename).suffix
-    return f"exercise-video/{instance.exercise_base.id}/{instance.uuid}{ext}"
+    return f'exercise-video/{instance.exercise_base.id}/{instance.uuid}{ext}'
 
 
-class ExerciseVideo(AbstractLicenseModel, models.Model):
+class ExerciseVideo(AbstractLicenseModel, AbstractHistoryMixin, models.Model):
     """
     Model for an exercise image
     """
@@ -73,6 +88,7 @@ class ExerciseVideo(AbstractLicenseModel, models.Model):
     uuid = models.UUIDField(
         default=uuid.uuid4,
         editable=False,
+        unique=True,
         verbose_name='UUID',
     )
     """Globally unique ID, to identify the image across installations"""
@@ -82,7 +98,7 @@ class ExerciseVideo(AbstractLicenseModel, models.Model):
         verbose_name=_('Exercise'),
         on_delete=models.CASCADE,
     )
-    """The exercise the image belongs to"""
+    """The exercise the video belongs to"""
 
     is_main = models.BooleanField(
         verbose_name=_('Main video'),
@@ -143,10 +159,32 @@ class ExerciseVideo(AbstractLicenseModel, models.Model):
     )
     """The video codec, in full"""
 
+    created = models.DateTimeField(
+        _('Date'),
+        auto_now_add=True,
+    )
+    """The creation time"""
+
+    last_update = models.DateTimeField(
+        _('Date'),
+        auto_now=True,
+    )
+    """Datetime of last modification"""
+
+    history = HistoricalRecords()
+    """Edit history"""
+
+    def get_absolute_url(self):
+        """
+        Returns the video URL
+        """
+        return self.video.url
+
     class Meta:
         """
         Set default ordering
         """
+
         ordering = ['-is_main', 'id']
 
     def get_owner_object(self):
@@ -166,7 +204,6 @@ class ExerciseVideo(AbstractLicenseModel, models.Model):
 
             # Streams are stored in a list, and we don't know which one is the video stream
             for stream in probe_result['streams']:
-
                 if stream['codec_type'] != 'video':
                     continue
 
@@ -176,4 +213,7 @@ class ExerciseVideo(AbstractLicenseModel, models.Model):
                 self.codec = stream['codec_name']
                 self.codec_long = stream['codec_long_name']
 
-        super(ExerciseVideo, self).save(*args, **kwargs)
+        # Api cache
+        reset_exercise_api_cache(self.exercise_base.uuid)
+
+        super().save(*args, **kwargs)

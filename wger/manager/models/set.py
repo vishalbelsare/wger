@@ -26,7 +26,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 # wger
-from wger.exercises.models import Exercise
+from wger.exercises.models import ExerciseBase
 from wger.utils.cache import reset_workout_canonical_form
 from wger.utils.helpers import normalize_decimal
 
@@ -38,6 +38,7 @@ class Set(models.Model):
     """
     Model for a set of exercises
     """
+
     DEFAULT_SETS = 4
     MAX_SETS = 10
 
@@ -62,14 +63,14 @@ class Set(models.Model):
     # Metaclass to set some other properties
     class Meta:
         ordering = [
-            "order",
+            'order',
         ]
 
     def __str__(self):
         """
         Return a more human-readable representation
         """
-        return "Set-ID {0}".format(self.id)
+        return f'Set-ID {self.id}'
 
     def get_owner_object(self):
         """
@@ -94,9 +95,11 @@ class Set(models.Model):
         super(Set, self).delete(*args, **kwargs)
 
     @property
-    def exercises(self) -> typing.List[Exercise]:
+    def exercise_bases(self) -> typing.List[ExerciseBase]:
         """Returns the exercises for this set"""
-        out = list(dict.fromkeys([s.exercise for s in self.setting_set.select_related().all()]))
+        out = list(
+            dict.fromkeys([s.exercise_base for s in self.setting_set.select_related().all()])
+        )
         for exercise in out:
             exercise.settings = self.reps_smart_text(exercise)
 
@@ -117,19 +120,19 @@ class Set(models.Model):
         * Exercise 2, 8 reps,  10 kg
         """
         setting_lists = []
-        for exercise in self.exercises:
-            setting_lists.append(self.computed_settings_exercise(exercise))
+        for base in self.exercise_bases:
+            setting_lists.append(self.computed_settings_exercise(base))
 
         # Interleave all lists
         return [val for tup in zip(*setting_lists) for val in tup]
 
-    def computed_settings_exercise(self, exercise: Exercise):  # -> typing.List[Setting]
+    def computed_settings_exercise(self, exercise_base: ExerciseBase):  # -> typing.List[Setting]
         """
         Returns a computed list of settings
 
         If a set has only one set
         """
-        settings = self.setting_set.filter(exercise=exercise)
+        settings = self.setting_set.filter(exercise_base=exercise_base)
 
         if settings.count() == 0:
             return []
@@ -139,7 +142,7 @@ class Set(models.Model):
         else:
             return list(settings.all())
 
-    def reps_smart_text(self, exercise: Exercise):
+    def reps_smart_text(self, exercise_base: ExerciseBase):
         """
         "Smart" textual representation
 
@@ -148,7 +151,7 @@ class Set(models.Model):
         This helper also takes care to process, hide or show the different repetition
         and weight units as appropriate, e.g. "8 x 2 Plates", "10, 20, 30, ∞"
 
-        :param exercise:
+        :param exercise_base:
         :return setting_text, setting_list:
         """
 
@@ -158,9 +161,9 @@ class Set(models.Model):
             """
 
             if setting.rir:
-                rir = f"{setting.rir} RiR"
+                rir = f'{setting.rir} RiR'
             else:
-                rir = ""
+                rir = ''
             return rir
 
         def get_reps_reprentation(setting, rep_unit):
@@ -171,7 +174,7 @@ class Set(models.Model):
             "Until Failure" unit
             """
             if setting.repetition_unit_id != 2:
-                reps = "{0} {1}".format(setting.reps, rep_unit).strip()
+                reps = f'{setting.reps} {rep_unit}'.strip()
             else:
                 reps = '∞'
             return reps
@@ -208,16 +211,16 @@ class Set(models.Model):
             weight_unit = settings[0].weight_unit.name
             weight = normalize_weight(current_setting)
             rir = get_rir_representation(current_setting)
-            out = '{0} × {1}'.format(self.sets, reps).strip() if not multi else reps
+            out = f'{self.sets} × {reps}'.strip() if not multi else reps
             if weight:
                 rir_text = f', {rir}' if rir else ''
                 out += f' ({weight} {weight_unit}{rir_text})'
             else:
-                out += ' ({0})'.format(rir) if rir else ''
+                out += f' ({rir})' if rir else ''
 
             return out
 
-        settings = self.setting_set.select_related().filter(exercise=exercise)
+        settings = self.setting_set.select_related().filter(exercise_base=exercise_base)
         setting_text = ''
 
         # Only one setting entry, this is a "compact" representation such as e.g.

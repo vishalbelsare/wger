@@ -50,6 +50,7 @@ class ListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
     Overview of all available weight units
     """
+
     model = WeightUnit
     permission_required = 'core.add_weightunit'
     template_name = 'weight_unit/list.html'
@@ -92,7 +93,6 @@ class DeleteView(WgerDeleteMixin, LoginRequiredMixin, PermissionRequiredMixin, D
     """
 
     model = WeightUnit
-    fields = ['name']
     success_url = reverse_lazy('core:weight-unit:list')
     permission_required = 'core.delete_weightunit'
 

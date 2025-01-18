@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of Workout Manager.
 #
 # Workout Manager is free software: you can redistribute it and/or modify
@@ -20,6 +18,7 @@ from django.utils.translation import gettext_lazy as _
 
 # wger
 from wger.core.models import License
+from wger.utils.constants import CC_BY_SA_4_ID
 
 
 """
@@ -30,6 +29,12 @@ Abstract model classes
 class AbstractLicenseModel(models.Model):
     """
     Abstract class that adds license information to a model
+
+    Implements TASL (Title - Author - Source - License) for proper attribution
+
+    See also
+    - https://wiki.creativecommons.org/wiki/Recommended_practices_for_attribution
+    - https://wiki.creativecommons.org/wiki/Best_practices_for_attribution
     """
 
     class Meta:
@@ -38,51 +43,101 @@ class AbstractLicenseModel(models.Model):
     license = models.ForeignKey(
         License,
         verbose_name=_('License'),
-        default=2,
+        default=CC_BY_SA_4_ID,
         on_delete=models.CASCADE,
     )
-    """The item's license"""
 
-    license_author = models.CharField(
-        verbose_name=_('Author'),
-        max_length=50,
+    license_title = models.CharField(
+        verbose_name=_('The original title of this object, if available'),
+        max_length=300,
+        blank=True,
+    )
+
+    license_object_url = models.URLField(
+        verbose_name=_('Link to original object, if available'),
+        max_length=200,
+        blank=True,
+    )
+
+    license_author = models.TextField(
+        verbose_name=_('Author(s)'),
+        max_length=3500,
         blank=True,
         null=True,
+        help_text=_('If you are not the author, enter the name or source here.'),
+    )
+
+    license_author_url = models.URLField(
+        verbose_name=_('Link to author profile, if available'),
+        max_length=200,
+        blank=True,
+    )
+
+    license_derivative_source_url = models.URLField(
+        verbose_name=_('Link to the original source, if this is a derivative work'),
         help_text=_(
-            'If you are not the author, enter the name or '
-            'source here. This is needed for some licenses '
-            'e.g. the CC-BY-SA.'
-        )
+            'Note that a derivative work is one which is not only based on a previous '
+            'work, but which also contains sufficient new, creative content to entitle it '
+            'to its own copyright.'
+        ),
+        max_length=200,
+        blank=True,
     )
-    """The author if it is not the uploader"""
+
+    @property
+    def attribution_link(self):
+        out = ''
+
+        if self.license_object_url:
+            out += f'<a href="{self.license_object_url}">{self.license_title}</a>'
+        else:
+            out += self.license_title
+
+        out += ' by '
+        if self.license_author_url:
+            out += f'<a href="{self.license_author_url}">{self.license_author}</a>'
+        else:
+            out += self.license_author
+
+        out += f' is licensed under <a href="{self.license.url}">{self.license.short_name}</a>'
+
+        if self.license_derivative_source_url:
+            out += (
+                f'/ A derivative work from <a href="{self.license_derivative_source_url}">the '
+                f'original work</a>'
+            )
+
+        return out
 
 
-class AbstractSubmissionModel(models.Model):
+class AbstractHistoryMixin:
     """
-    Abstract class used for model for user submitted data.
+    Abstract class used to model specific historical records.
 
-    These models have to be approved first by an administrator before they are
-    shows in the website. There is also a manager that can be used:
-    utils.managers.SubmissionManager
+    Utilized in conjunction with simple_history's HistoricalRecords.
     """
 
-    class Meta:
-        abstract = True
+    @property
+    def author_history(self):
+        """Author history is the unique set of license authors from historical records"""
+        return collect_model_author_history(self)
 
-    STATUS_PENDING = '1'
-    STATUS_ACCEPTED = '2'
-    STATUS_DECLINED = '3'
 
-    STATUS = (
-        (STATUS_PENDING, _('Pending')),
-        (STATUS_ACCEPTED, _('Accepted')),
-        (STATUS_DECLINED, _('Declined')),
-    )
+def collect_model_author_history(model):
+    """
+    Get unique set of license authors from historical records from model.
+    """
+    out = set()
+    for author in [h.license_author for h in set(model.history.all()) if h.license_author]:
+        out.add(author)
+    return out
 
-    status = models.CharField(
-        max_length=2,
-        choices=STATUS,
-        default=STATUS_PENDING,
-        editable=False,
-    )
-    """Status of the submission, e.g. accepted or declined"""
+
+def collect_models_author_history(model_list):
+    """
+    Get unique set of license authors from historical records from models.
+    """
+    out = set()
+    for model in model_list:
+        out = out.union(collect_model_author_history(model))
+    return out

@@ -64,11 +64,7 @@ class WorkoutICalExportTestCase(WgerTestCase):
         user = User.objects.get(username='test')
         uid, token = make_token(user)
         response = self.client.get(
-            reverse('manager:workout:ical', kwargs={
-                'pk': 3,
-                'uidb64': uid,
-                'token': token
-            })
+            reverse('manager:workout:ical', kwargs={'pk': 3, 'uidb64': uid, 'token': token})
         )
 
         self.assertEqual(response.status_code, 200)
@@ -79,7 +75,7 @@ class WorkoutICalExportTestCase(WgerTestCase):
 
         # Approximate size
         self.assertGreater(len(response.content), 540)
-        self.assertLess(len(response.content), 560)
+        self.assertLess(len(response.content), 620)
 
     def export_ical_token_wrong(self):
         """
@@ -89,11 +85,7 @@ class WorkoutICalExportTestCase(WgerTestCase):
         uid = 'AB'
         token = 'abc-11223344556677889900'
         response = self.client.get(
-            reverse('manager:workout:ical', kwargs={
-                'pk': 3,
-                'uidb64': uid,
-                'token': token
-            })
+            reverse('manager:workout:ical', kwargs={'pk': 3, 'uidb64': uid, 'token': token})
         )
 
         self.assertEqual(response.status_code, 403)
@@ -116,7 +108,7 @@ class WorkoutICalExportTestCase(WgerTestCase):
 
             # Approximate size
             self.assertGreater(len(response.content), 540)
-            self.assertLess(len(response.content), 560)
+            self.assertLess(len(response.content), 620)
 
     def test_export_ical_anonymous(self):
         """
@@ -161,11 +153,7 @@ class ScheduleICalExportTestCase(WgerTestCase):
         user = User.objects.get(username='test')
         uid, token = make_token(user)
         response = self.client.get(
-            reverse('manager:schedule:ical', kwargs={
-                'pk': 2,
-                'uidb64': uid,
-                'token': token
-            })
+            reverse('manager:schedule:ical', kwargs={'pk': 2, 'uidb64': uid, 'token': token})
         )
 
         self.assertEqual(response.status_code, 200)
@@ -176,7 +164,7 @@ class ScheduleICalExportTestCase(WgerTestCase):
 
         # Approximate size
         self.assertGreater(len(response.content), 1650)
-        self.assertLess(len(response.content), 1670)
+        self.assertLess(len(response.content), 1800)
 
     def export_ical_token_wrong(self):
         """
@@ -186,11 +174,7 @@ class ScheduleICalExportTestCase(WgerTestCase):
         uid = 'AB'
         token = 'abc-11223344556677889900'
         response = self.client.get(
-            reverse('manager:schedule:ical', kwargs={
-                'pk': 2,
-                'uidb64': uid,
-                'token': token
-            })
+            reverse('manager:schedule:ical', kwargs={'pk': 2, 'uidb64': uid, 'token': token})
         )
 
         self.assertEqual(response.status_code, 403)
@@ -213,7 +197,7 @@ class ScheduleICalExportTestCase(WgerTestCase):
 
             # Approximate size
             self.assertGreater(len(response.content), 1650)
-            self.assertLess(len(response.content), 1670)
+            self.assertLess(len(response.content), 1800)
 
     def test_export_ical_anonymous(self):
         """

@@ -50,6 +50,7 @@ class ListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
     Overview of all available setting units
     """
+
     model = RepetitionUnit
     permission_required = 'core.add_repetitionunit'
     template_name = 'repetition_unit/list.html'
@@ -92,7 +93,6 @@ class DeleteView(WgerDeleteMixin, LoginRequiredMixin, PermissionRequiredMixin, D
     """
 
     model = RepetitionUnit
-    fields = ['name']
     success_url = reverse_lazy('core:repetition-unit:list')
     permission_required = 'core.delete_repetitionunit'
 

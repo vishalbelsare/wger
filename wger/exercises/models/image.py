@@ -19,18 +19,19 @@ import pathlib
 import uuid
 
 # Django
-from django.core import mail
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+# Third Party
+from simple_history.models import HistoricalRecords
+
 # wger
-from wger.core.models import Language
 from wger.exercises.models import ExerciseBase
-from wger.utils.cache import delete_template_fragment_cache
-from wger.utils.managers import SubmissionManager
+from wger.utils.cache import reset_exercise_api_cache
+from wger.utils.helpers import BaseImage
 from wger.utils.models import (
+    AbstractHistoryMixin,
     AbstractLicenseModel,
-    AbstractSubmissionModel,
 )
 
 
@@ -39,16 +40,13 @@ def exercise_image_upload_dir(instance, filename):
     Returns the upload target for exercise images
     """
     ext = pathlib.Path(filename).suffix
-    return "exercise-images/{0}/{1}{2}".format(instance.exercise_base.id, instance.uuid, ext)
+    return f'exercise-images/{instance.exercise_base.id}/{instance.uuid}{ext}'
 
 
-class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
+class ExerciseImage(AbstractLicenseModel, AbstractHistoryMixin, models.Model, BaseImage):
     """
     Model for an exercise image
     """
-
-    objects = SubmissionManager()
-    """Custom manager"""
 
     LINE_ART = '1'
     THREE_D = '2'
@@ -66,6 +64,7 @@ class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model)
     uuid = models.UUIDField(
         default=uuid.uuid4,
         editable=False,
+        unique=True,
         verbose_name='UUID',
     )
     """Globally unique ID, to identify the image across installations"""
@@ -88,11 +87,11 @@ class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model)
         verbose_name=_('Main picture'),
         default=False,
         help_text=_(
-            "Tick the box if you want to set this image as the "
-            "main one for the exercise (will be shown e.g. in "
-            "the search). The first image is automatically "
-            "marked by the system."
-        )
+            'Tick the box if you want to set this image as the '
+            'main one for the exercise (will be shown e.g. in '
+            'the search). The first image is automatically '
+            'marked by the system.'
+        ),
     )
     """A flag indicating whether the image is the exercise's main image"""
 
@@ -104,10 +103,32 @@ class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model)
     )
     """The art style of the image"""
 
+    created = models.DateTimeField(
+        _('Date'),
+        auto_now_add=True,
+    )
+    """The creation time"""
+
+    last_update = models.DateTimeField(
+        _('Date'),
+        auto_now=True,
+    )
+    """Datetime of last modification"""
+
+    history = HistoricalRecords()
+    """Edit history"""
+
+    def get_absolute_url(self):
+        """
+        Return the image URL
+        """
+        return self.image.url
+
     class Meta:
         """
         Set default ordering
         """
+
         ordering = ['-is_main', 'id']
         base_manager_name = 'objects'
 
@@ -119,46 +140,41 @@ class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model)
             ExerciseImage.objects.filter(exercise_base=self.exercise_base).update(is_main=False)
             self.is_main = True
         else:
-            if ExerciseImage.objects.accepted()\
-                .filter(exercise_base=self.exercise_base).count() == 0 \
-               or not ExerciseImage.objects.accepted() \
-                    .filter(exercise_base=self.exercise_base, is_main=True)\
-                    .count():
-
+            if (
+                ExerciseImage.objects.all().filter(exercise_base=self.exercise_base).count() == 0
+                or not ExerciseImage.objects.all()
+                .filter(exercise_base=self.exercise_base, is_main=True)
+                .count()
+            ):
                 self.is_main = True
 
-        #
-        # Reset all cached infos
-        #
-        for language in Language.objects.all():
-            delete_template_fragment_cache('muscle-overview', language.id)
-            delete_template_fragment_cache('exercise-overview', language.id)
-            delete_template_fragment_cache('exercise-overview-mobile', language.id)
-            delete_template_fragment_cache('equipment-overview', language.id)
+        # Api cache
+        reset_exercise_api_cache(self.exercise_base.uuid)
 
         # And go on
-        super(ExerciseImage, self).save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         """
         Reset all cached infos
         """
-        super(ExerciseImage, self).delete(*args, **kwargs)
+        reset_exercise_api_cache(self.exercise_base.uuid)
 
-        for language in Language.objects.all():
-            delete_template_fragment_cache('muscle-overview', language.id)
-            delete_template_fragment_cache('exercise-overview', language.id)
-            delete_template_fragment_cache('exercise-overview-mobile', language.id)
-            delete_template_fragment_cache('equipment-overview', language.id)
+        super().delete(*args, **kwargs)
 
         # Make sure there is always a main image
-        if not ExerciseImage.objects.accepted().filter(
-            exercise_base=self.exercise_base, is_main=True
-        ).count() and ExerciseImage.objects.accepted().filter(exercise_base=self.exercise_base
-                                                              ).filter(is_main=False).count():
-
-            image = ExerciseImage.objects.accepted() \
-                .filter(exercise_base=self.exercise_base, is_main=False)[0]
+        if (
+            not ExerciseImage.objects.all()
+            .filter(exercise_base=self.exercise_base, is_main=True)
+            .count()
+            and ExerciseImage.objects.all()
+            .filter(exercise_base=self.exercise_base)
+            .filter(is_main=False)
+            .count()
+        ):
+            image = ExerciseImage.objects.all().filter(
+                exercise_base=self.exercise_base, is_main=False
+            )[0]
             image.is_main = True
             image.save()
 
@@ -168,25 +184,31 @@ class ExerciseImage(AbstractSubmissionModel, AbstractLicenseModel, models.Model)
         """
         return False
 
-    def set_author(self, request):
-        """
-        Set author and status
-        This is only used when creating images (via web or API)
-        """
-        if request.user.has_perm('exercises.add_exerciseimage'):
-            self.status = self.STATUS_ACCEPTED
-            if not self.license_author:
-                self.license_author = request.get_host().split(':')[0]
+    @classmethod
+    def from_json(
+        cls,
+        connect_to: ExerciseBase,
+        retrieved_image,
+        json_data: dict,
+        generate_uuid: bool = False,
+    ):
+        image: cls = super().from_json(
+            connect_to,
+            retrieved_image,
+            json_data,
+            generate_uuid,
+        )
+        image.exercise_base = connect_to
+        image.is_main = json_data['is_main']
 
-        else:
-            if not self.license_author:
-                self.license_author = request.user.username
+        image.license_id = json_data['license']
+        image.license_title = json_data['license_title']
+        image.license_object_url = json_data['license_object_url']
+        image.license_author = json_data['license_author']
+        image.license_author_url = json_data['license_author_url']
+        image.license_derivative_source_url = json_data['license_derivative_source_url']
 
-            subject = _('New user submitted image')
-            message = _('The user {0} submitted a new image "{1}" for exercise {2}.'
-                        ).format(request.user.username, self.name, self.exercise)
-            mail.mail_admins(
-                str(subject),
-                str(message),
-                fail_silently=True,
-            )
+        image.save_image(retrieved_image, json_data)
+
+        image.save()
+        return image

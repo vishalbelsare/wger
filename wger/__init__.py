@@ -1,14 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-    :copyright: 2011, 2012 by OpenSlides team, see AUTHORS.
-    :license: GNU GPL, see LICENSE for more details.
+:copyright: 2011, 2012 by OpenSlides team, see AUTHORS.
+:license: GNU GPL, see LICENSE for more details.
 """
 
-MIN_APP_VERSION = (1, 3, 0, 'final', 1)
+# Local
+from .celery_configuration import app
 
-VERSION = (2, 1, 0, 'alpha', 3)
-RELEASE = False
+
+MIN_APP_VERSION = (1, 7, 4, 'final', 1)
+
+VERSION = (2, 3, 0, 'alpha', 3)
+RELEASE = True
 
 
 def get_version(version=None, release=None):
@@ -26,7 +30,9 @@ def get_version(version=None, release=None):
     # sub = .devN - for pre-alpha releases
     #     | {a|b|c}N - for alpha, beta and rc releases
 
-    main_parts = 2 if version[2] == 0 else 3
+    # Always use all three parts, otherwise we might get problems in the version
+    # parser on the flutter side of things
+    main_parts = 3
     main = '.'.join(str(x) for x in version[:main_parts])
 
     if version[3] != 'final':

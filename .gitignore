@@ -58,6 +58,7 @@ target/
 
 # IDE
 .idea/
+.vscode/
 
 # External Libraries
 wger/core/static/yarn
@@ -65,7 +66,20 @@ node_modules
 
 # Virtual envs
 venv
-venv-wget
+venv-wger
+.python-version
 
-# Dummy file for translations
-/wger/i18n.tpl
+# Dummy translation files to copy to react or flutter repo
+/wger/i18n.tsx
+
+# Will need to copy these files to the flutter repo
+/wger/i18n.dart
+/wger/app_en.arb
+/coverage.lcov
+/media/
+/static/
+/extras/docker/open-food-facts/dump/*.tar.gz
+/extras/docker/open-food-facts/dump/off/*
+
+# macOS
+.DS_Store

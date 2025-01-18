@@ -15,9 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 
 # Standard Library
-# Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 import os
 import re
+import sys
+from datetime import timedelta
+
+# wger
+from wger import get_version
+from wger.utils.constants import DOWNLOAD_INGREDIENT_WGER
 
 
 """
@@ -36,14 +41,13 @@ SITE_ID = 1
 ROOT_URLCONF = 'wger.urls'
 WSGI_APPLICATION = 'wger.wsgi.application'
 
-INSTALLED_APPS = (
+INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.messages',
     'django.contrib.sessions',
     'django.contrib.sites',
     'django.contrib.staticfiles',
-    'django_extensions',
     'storages',
 
     # Uncomment the next line to enable the admin:
@@ -64,7 +68,7 @@ INSTALLED_APPS = (
     'wger.measurements',
 
     # reCaptcha support, see https://github.com/praekelt/django-recaptcha
-    'captcha',
+    'django_recaptcha',
 
     # The sitemaps app
     'django.contrib.sitemaps',
@@ -77,20 +81,45 @@ INSTALLED_APPS = (
 
     # Form renderer helper
     'crispy_forms',
+    'crispy_bootstrap5',
 
     # REST-API
     'rest_framework',
     'rest_framework.authtoken',
     'django_filters',
+    'rest_framework_simplejwt',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
 
     # Breadcrumbs
     'django_bootstrap_breadcrumbs',
 
     # CORS
     'corsheaders',
-)
 
-MIDDLEWARE = (
+    # Django Axes
+    'axes',
+
+    # History keeping
+    'simple_history',
+
+    # Django email verification
+    'django_email_verification',
+
+    # Activity stream
+    'actstream',
+
+    # Fontawesome
+    'fontawesomefree',
+
+    # Prometheus
+    'django_prometheus',
+]
+
+MIDDLEWARE = [
+    # Prometheus
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
+
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -110,16 +139,26 @@ MIDDLEWARE = (
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django.middleware.locale.LocaleMiddleware',
-)
+
+    # History keeping
+    'simple_history.middleware.HistoryRequestMiddleware',
+
+    # Prometheus
+    'django_prometheus.middleware.PrometheusAfterMiddleware',
+
+    # Django Axes
+    'axes.middleware.AxesMiddleware',  # should be the last one in the list
+]
 
 AUTHENTICATION_BACKENDS = (
-    'django.contrib.auth.backends.ModelBackend', 'wger.utils.helpers.EmailAuthBackend'
+    'axes.backends.AxesStandaloneBackend',  # should be the first one in the list
+    'django.contrib.auth.backends.ModelBackend',
+    'wger.utils.helpers.EmailAuthBackend',
 )
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        # 'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
                 'wger.utils.context_processor.processor',
@@ -140,8 +179,7 @@ TEMPLATES = [
                 'django.template.loaders.filesystem.Loader',
                 'django.template.loaders.app_directories.Loader',
             ],
-            'debug':
-            False
+            'debug': False
         },
     },
 ]
@@ -175,6 +213,7 @@ LOGIN_REDIRECT_URL = '/'
 USE_TZ = True
 USE_I18N = True
 USE_L10N = True
+USE_THOUSAND_SEPARATOR = True
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -185,31 +224,48 @@ USE_L10N = True
 # system time zone.
 TIME_ZONE = 'UTC'
 
-# Restrict the available languages
-LANGUAGES = (
-    ('en', 'English'),
-    ('de', 'German'),
+# Available languages. Needs to be kept in sync with sufficiently
+# translated languages: https://hosted.weblate.org/projects/wger/web/
+#
+# Translated languages for which a country specific locale exists in django
+# upstream need to be added here as well (plus their country flag)
+# https://github.com/django/django/blob/main/django/conf/global_settings.py
+AVAILABLE_LANGUAGES = (
     ('bg', 'Bulgarian'),
-    ('es', 'Spanish'),
-    ('ru', 'Russian'),
-    ('nl', 'Dutch'),
-    ('pt', 'Portuguese'),
-    ('el', 'Greek'),
+    ('ca', 'Catalan'),
     ('cs', 'Czech'),
-    ('sv', 'Swedish'),
-    ('no', 'Norwegian'),
+    ('de', 'German'),
+    ('el', 'Greek'),
+    ('en', 'English'),
+    ('en-au', 'Australian English'),
+    ('en-gb', 'British English'),
+    ('es', 'Spanish'),
+    ('es-ar', 'Argentinian Spanish'),
+    ('es-co', 'Colombian Spanish'),
+    ('es-mx', 'Mexican Spanish'),
+    ('es-ni', 'Nicaraguan Spanish'),
+    ('es-ve', 'Venezuelan Spanish'),
     ('fr', 'French'),
+    ('hr', 'Croatian'),
     ('it', 'Italian'),
+    ('nl', 'Dutch'),
+    ('nb', 'Norwegian'),
     ('pl', 'Polish'),
-    ('uk', 'Ukrainian'),
+    ('pt', 'Portuguese'),
+    ('pt-br', 'Brazilian Portuguese'),
+    ('ru', 'Russian'),
+    ('sv', 'Swedish'),
     ('tr', 'Turkish'),
+    ('uk', 'Ukrainian'),
+    ('zh-hans', 'Chinese simplified'),
+    ('zh-hant', 'Traditional Chinese'),
 )
 
 # Default language code for this installation.
 LANGUAGE_CODE = 'en'
 
 # All translation files are in one place
-LOCALE_PATHS = (os.path.join(SITE_ROOT, 'locale'), )
+LOCALE_PATHS = (os.path.join(SITE_ROOT, 'locale'),)
 
 # Primary keys are AutoFields
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
@@ -237,6 +293,11 @@ LOGGING = {
         'wger': {
             'handlers': ['console'],
             'level': 'DEBUG',
+        },
+        '': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
         }
     }
 }
@@ -258,9 +319,27 @@ CACHES = {
 }
 
 #
+# Django Axes
+#
+AXES_ENABLED = True
+AXES_FAILURE_LIMIT = 10
+AXES_COOLOFF_TIME = timedelta(minutes=30)
+AXES_LOCKOUT_TEMPLATE = None
+AXES_RESET_ON_SUCCESS = False
+AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = True
+
+# If you want to set up redis, set AXES_HANDLER = 'axes.handlers.cache.AxesCacheHandler'
+AXES_HANDLER = 'axes.handlers.database.AxesDatabaseHandler'
+
+# If your redis or MemcachedCache has a different name other than 'default'
+# (e.g. when you have multiple caches defined in CACHES), change the following value to that name
+AXES_CACHE = 'default'
+
+#
 # Django Crispy Templates
 #
-CRISPY_TEMPLATE_PACK = 'bootstrap4'
+CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = 'bootstrap5'
 
 #
 # Easy thumbnails
@@ -352,7 +431,8 @@ else:
 # The default is not DEBUG, override if needed
 # COMPRESS_ENABLED = True
 COMPRESS_CSS_FILTERS = (
-    'compressor.filters.css_default.CssAbsoluteFilter', 'compressor.filters.cssmin.rCSSMinFilter'
+    'compressor.filters.css_default.CssAbsoluteFilter',
+    'compressor.filters.cssmin.rCSSMinFilter',
 )
 COMPRESS_JS_FILTERS = [
     'compressor.filters.jsmin.JSMinFilter',
@@ -363,19 +443,17 @@ COMPRESS_ROOT = STATIC_ROOT
 #
 # Django Rest Framework
 #
+# yapf: disable
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': ('wger.utils.permissions.WgerPermission', ),
-    'DEFAULT_PAGINATION_CLASS':
-    'rest_framework.pagination.LimitOffsetPagination',
-    'PAGE_SIZE':
-    20,
-    'PAGINATE_BY_PARAM':
-    'limit',  # Allow client to override, using `?limit=xxx`.
-    'TEST_REQUEST_DEFAULT_FORMAT':
-    'json',
+    'DEFAULT_PERMISSION_CLASSES': ('wger.utils.permissions.WgerPermission',),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 20,
+    'PAGINATE_BY_PARAM': 'limit',  # Allow client to override, using `?limit=xxx`.
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -383,8 +461,41 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
     'DEFAULT_THROTTLE_RATES': {
-        'login': '3/min'
-    }
+        'login': '10/min',
+        'registration': '5/min'
+    },
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+# yapf: enable
+
+# Api docs
+# yapf: disable
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'wger',
+    'SERVERS': [
+        {'url': '/', 'description': 'This server'},
+        {'url': 'https://wger.de', 'description': 'The "official" upstream wger instance'},
+    ],
+    'DESCRIPTION': 'Self hosted FLOSS workout and fitness tracker',
+    'VERSION': get_version(),
+    'SERVE_INCLUDE_SCHEMA': True,
+    'SCHEMA_PATH_PREFIX': '/api/v[0-9]',
+    'SWAGGER_UI_DIST': 'SIDECAR',
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR',
+    'COMPONENT_SPLIT_REQUEST': True
+}
+# yapf: enable
+
+#
+# Django Rest Framework SimpleJWT
+#
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': False,
 }
 
 #
@@ -396,7 +507,7 @@ CORS_URLS_REGEX = r'^/api/.*$'
 #
 # Ignore these URLs if they cause 404
 #
-IGNORABLE_404_URLS = (re.compile(r'^/favicon\.ico$'), )
+IGNORABLE_404_URLS = (re.compile(r'^/favicon\.ico$'),)
 
 #
 # Password rules
@@ -424,11 +535,56 @@ USER_AGENTS_CACHE = 'default'
 # Consult docs/settings.rst for more information
 #
 WGER_SETTINGS = {
-    'USE_RECAPTCHA': False,
-    'REMOVE_WHITESPACE': False,
-    'ALLOW_REGISTRATION': True,
     'ALLOW_GUEST_USERS': True,
+    'ALLOW_REGISTRATION': True,
     'ALLOW_UPLOAD_VIDEOS': False,
+    'DOWNLOAD_INGREDIENTS_FROM': DOWNLOAD_INGREDIENT_WGER,
     'EMAIL_FROM': 'wger Workout Manager <wger@example.com>',
-    'TWITTER': False
+    'EXERCISE_CACHE_TTL': 3600,
+    'INGREDIENT_CACHE_TTL': 604800,  # one week
+    'MIN_ACCOUNT_AGE_TO_TRUST': 21,
+    'SYNC_EXERCISES_CELERY': False,
+    'SYNC_EXERCISE_IMAGES_CELERY': False,
+    'SYNC_EXERCISE_VIDEOS_CELERY': False,
+    'SYNC_INGREDIENTS_CELERY': False,
+    'SYNC_OFF_DAILY_DELTA_CELERY': False,
+    'TWITTER': False,
+    'MASTODON': 'https://fosstodon.org/@wger',
+    'USE_CELERY': False,
+    'USE_RECAPTCHA': False,
+    'WGER_INSTANCE': 'https://wger.de',
 }
+
+#
+# Prometheus metrics
+#
+EXPOSE_PROMETHEUS_METRICS = False
+PROMETHEUS_URL_PATH = 'super-secret-path'
+
+
+#
+# Django email verification
+#
+def email_verified_callback(user):
+    user.userprofile.email_verified = True
+    user.userprofile.save()
+
+
+EMAIL_MAIL_CALLBACK = email_verified_callback
+EMAIL_FROM_ADDRESS = WGER_SETTINGS['EMAIL_FROM']
+EMAIL_MAIL_SUBJECT = 'Confirm your email'
+EMAIL_MAIL_HTML = 'email_verification/email_body_html.tpl'
+EMAIL_MAIL_PLAIN = 'email_verification/email_body_txt.tpl'
+EMAIL_MAIL_TOKEN_LIFE = 60 * 60
+EMAIL_MAIL_PAGE_TEMPLATE = 'email_verification/confirm_template.html'
+EMAIL_PAGE_DOMAIN = 'http://localhost:8000/'
+
+#
+# Django-activity stream
+#
+ACTSTREAM_SETTINGS = {
+    'USE_JSONFIELD': True,
+}
+
+# Whether the application is being run regularly or during tests
+TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'

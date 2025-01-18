@@ -61,6 +61,7 @@ class WorkoutSessionUpdateView(WgerFormMixin, LoginRequiredMixin, UpdateView):
     """
     Generic view to edit an existing workout session entry
     """
+
     model = WorkoutSession
     form_class = WorkoutSessionForm
 
@@ -78,6 +79,7 @@ class WorkoutSessionAddView(WgerFormMixin, LoginRequiredMixin, CreateView):
     """
     Generic view to add a new workout session entry
     """
+
     model = WorkoutSession
     form_class = WorkoutSessionForm
 
@@ -136,21 +138,19 @@ class WorkoutSessionDeleteView(WgerDeleteMixin, LoginRequiredMixin, DeleteView):
     """
 
     model = WorkoutSession
-    fields = ('date', 'notes', 'impression', 'time_start', 'time_end')
     success_url = reverse_lazy('manager:workout:overview')
     messages = gettext_lazy('Successfully deleted')
 
-    def delete(self, request, *args, **kwargs):
+    def form_valid(self, form):
         """
         Delete the workout session and, if wished, all associated weight logs as well
         """
         if self.kwargs.get('logs') == 'logs':
             WorkoutLog.objects.filter(user=self.request.user, date=self.get_object().date).delete()
 
-        return super(WorkoutSessionDeleteView, self).delete(request, *args, **kwargs)
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
-
         logs = '' if not self.kwargs.get('logs') else self.kwargs['logs']
         context = super(WorkoutSessionDeleteView, self).get_context_data(**kwargs)
         context['title'] = _('Delete {0}?').format(self.object)

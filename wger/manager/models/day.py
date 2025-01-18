@@ -111,34 +111,35 @@ class Day(models.Model):
         for set_obj in self.set_set.select_related():
             exercise_tmp = []
 
-            for exercise in set_obj.exercises:
+            for base in set_obj.exercise_bases:
                 setting_tmp = []
                 exercise_images_tmp = []
 
                 # Muscles for this set
-                for muscle in exercise.muscles.all():
+                for muscle in base.muscles.all():
                     if muscle.is_front and muscle not in muscles_front:
                         muscles_front.append(muscle)
                     elif not muscle.is_front and muscle not in muscles_back:
                         muscles_back.append(muscle)
 
-                for muscle in exercise.muscles_secondary.all():
+                for muscle in base.muscles_secondary.all():
                     if muscle.is_front and muscle not in muscles_front:
                         muscles_front_secondary.append(muscle)
                     elif not muscle.is_front and muscle.id not in muscles_back:
                         muscles_back_secondary.append(muscle)
 
-                for setting in Setting.objects.filter(set=set_obj,
-                                                      exercise=exercise).order_by('order', 'id'):
+                for setting in Setting.objects.filter(set=set_obj, exercise_base=base).order_by(
+                    'order', 'id'
+                ):
                     setting_tmp.append(setting)
 
                 # "Smart" textual representation
-                setting_text = set_obj.reps_smart_text(exercise)
+                setting_text = set_obj.reps_smart_text(base)
 
                 # Exercise comments
                 comment_list = []
-                for i in exercise.exercisecomment_set.all():
-                    comment_list.append(i.comment)
+                # for i in base.exercisecomment_set.all():
+                #    comment_list.append(i.comment)
 
                 # Flag indicating whether any of the settings has saved weight
                 has_weight = False
@@ -148,7 +149,7 @@ class Day(models.Model):
                         break
 
                 # Collect exercise images
-                for image in exercise.images.all():
+                for image in base.exerciseimage_set.all():
                     exercise_images_tmp.append(
                         {
                             'image': image.image.url,
@@ -159,12 +160,12 @@ class Day(models.Model):
                 # Put it all together
                 exercise_tmp.append(
                     {
-                        'obj': exercise,
+                        'obj': base,
                         'setting_obj_list': setting_tmp,
                         'setting_text': setting_text,
                         'has_weight': has_weight,
                         'comment_list': comment_list,
-                        'image_list': exercise_images_tmp
+                        'image_list': exercise_images_tmp,
                     }
                 )
 
@@ -195,8 +196,8 @@ class Day(models.Model):
                         'back': muscles_back,
                         'front': muscles_front,
                         'frontsecondary': muscles_front_secondary,
-                        'backsecondary': muscles_front_secondary
-                    }
+                        'backsecondary': muscles_front_secondary,
+                    },
                 }
             )
 
@@ -209,13 +210,13 @@ class Day(models.Model):
             'obj': self,
             'days_of_week': {
                 'text': ', '.join([str(_(i.day_of_week)) for i in tmp_days_of_week]),
-                'day_list': tmp_days_of_week
+                'day_list': tmp_days_of_week,
             },
             'muscles': {
                 'back': muscles_back,
                 'front': muscles_front,
                 'frontsecondary': muscles_front_secondary,
-                'backsecondary': muscles_front_secondary
+                'backsecondary': muscles_front_secondary,
             },
-            'set_list': canonical_repr
+            'set_list': canonical_repr,
         }

@@ -49,7 +49,10 @@ from wger.core.models import (
     RepetitionUnit,
     WeightUnit,
 )
-from wger.exercises.models import Exercise
+from wger.exercises.models import (
+    Exercise,
+    ExerciseBase,
+)
 from wger.manager.consts import RIR_OPTIONS
 from wger.manager.models import (
     Day,
@@ -66,7 +69,6 @@ from wger.utils.widgets import (
 
 
 class WorkoutForm(ModelForm):
-
     class Meta:
         model = Workout
         fields = (
@@ -76,7 +78,6 @@ class WorkoutForm(ModelForm):
 
 
 class WorkoutMakeTemplateForm(ModelForm):
-
     class Meta:
         model = Workout
         fields = (
@@ -90,20 +91,27 @@ class WorkoutCopyForm(Form):
     description = CharField(
         max_length=1000,
         help_text=_(
-            "A short description or goal of the workout. For "
+            'A short description or goal of the workout. For '
             "example 'Focus on back' or 'Week 1 of program xy'."
         ),
         widget=widgets.Textarea,
-        required=False
+        required=False,
     )
 
 
 class DayForm(ModelForm):
-
     class Meta:
         model = Day
-        exclude = ('training', )
+        exclude = ('training',)
         widgets = {'day': TranslatedSelectMultiple()}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.layout = Layout(
+            'description',
+            'day',
+        )
 
 
 class OrderedModelMultipleChoiceField(ModelMultipleChoiceField):
@@ -116,9 +124,8 @@ class OrderedModelMultipleChoiceField(ModelMultipleChoiceField):
 
 
 class SetForm(ModelForm):
-
     exercises = OrderedModelMultipleChoiceField(
-        queryset=Exercise.objects.all(),
+        queryset=ExerciseBase.objects.all(),
         label=_('Exercises'),
         required=False,
         widget=ExerciseAjaxSelect,
@@ -126,7 +133,13 @@ class SetForm(ModelForm):
             'You can search for more than one '
             'exercise, they will be grouped '
             'together for a superset.'
-        )
+        ),
+    )
+
+    english_results = BooleanField(
+        label=gettext_lazy('Also search for names in English'),
+        initial=True,
+        required=False,
     )
 
     class Meta:
@@ -135,7 +148,6 @@ class SetForm(ModelForm):
 
 
 class SettingForm(ModelForm):
-
     class Meta:
         model = Setting
         exclude = ('set', 'exercise', 'order', 'name')
@@ -150,6 +162,7 @@ class WorkoutLogForm(ModelForm):
     we want. This form is one prime candidate to rework with some modern JS
     framework, there is a ton of ugly logic like this just to make it work.
     """
+
     repetition_unit = ModelChoiceField(
         queryset=RepetitionUnit.objects.all(),
         label=_('Unit'),
@@ -160,8 +173,8 @@ class WorkoutLogForm(ModelForm):
         label=_('Unit'),
         required=False,
     )
-    exercise = ModelChoiceField(
-        queryset=Exercise.objects.all(),
+    exercise_base = ModelChoiceField(
+        queryset=ExerciseBase.objects.all(),
         label=_('Exercise'),
         required=False,
     )
@@ -182,23 +195,22 @@ class WorkoutLogForm(ModelForm):
 
     class Meta:
         model = WorkoutLog
-        exclude = ('workout', )
+        exclude = ('workout',)
 
 
 class WorkoutLogFormHelper(FormHelper):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.form_method = 'post'
         self.layout = Layout(
             'id',
             Row(
-                Column('reps', css_class='form-group col-2 mb-0'),
-                Column('repetition_unit', css_class='form-group col-3 mb-0'),
-                Column('weight', css_class='form-group col-2 mb-0'),
-                Column('weight_unit', css_class='form-group col-3 mb-0'),
-                Column('rir', css_class='form-group col-2 mb-0'),
-                css_class='form-row'
+                Column('reps', css_class='col-2'),
+                Column('repetition_unit', css_class='col-3'),
+                Column('weight', css_class='col-2'),
+                Column('weight_unit', css_class='col-3'),
+                Column('rir', css_class='col-2'),
+                css_class='form-row',
             ),
         )
         self.form_show_labels = False
@@ -221,15 +233,15 @@ class HelperWorkoutSessionForm(ModelForm):
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Row(
-                Column('date', css_class='form-group col-6 mb-0'),
-                Column('impression', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
+                Column('date', css_class='col-6'),
+                Column('impression', css_class='col-6'),
+                css_class='form-row',
             ),
             'notes',
             Row(
-                Column('time_start', css_class='form-group col-6 mb-0'),
-                Column('time_end', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
+                Column('time_start', css_class='col-6'),
+                Column('time_end', css_class='col-6'),
+                css_class='form-row',
             ),
         )
         self.helper.form_tag = False
@@ -251,9 +263,9 @@ class WorkoutSessionForm(ModelForm):
             'impression',
             'notes',
             Row(
-                Column('time_start', css_class='form-group col-6 mb-0'),
-                Column('time_end', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
+                Column('time_start', css_class='col-6'),
+                Column('time_end', css_class='col-6'),
+                css_class='form-row',
             ),
         )
 
@@ -262,12 +274,13 @@ class WorkoutScheduleDownloadForm(Form):
     """
     Form for the workout schedule download
     """
+
     pdf_type = ChoiceField(
-        label=gettext_lazy("Type"),
-        choices=(("log", gettext_lazy("Log")), ("table", gettext_lazy("Table")))
+        label=gettext_lazy('Type'),
+        choices=(('log', gettext_lazy('Log')), ('table', gettext_lazy('Table'))),
     )
-    images = BooleanField(label=gettext_lazy("with images"), required=False)
-    comments = BooleanField(label=gettext_lazy("with comments"), required=False)
+    images = BooleanField(label=gettext_lazy('with images'), required=False)
+    comments = BooleanField(label=gettext_lazy('with comments'), required=False)
 
     def __init__(self):
         super(WorkoutScheduleDownloadForm, self).__init__()
@@ -276,8 +289,8 @@ class WorkoutScheduleDownloadForm(Form):
         self.helper.add_input(
             Submit(
                 'submit',
-                _("Download"),
+                _('Download'),
                 css_class='btn-success btn-block',
-                css_id="download-pdf-button-schedule"
+                css_id='download-pdf-button-schedule',
             )
         )

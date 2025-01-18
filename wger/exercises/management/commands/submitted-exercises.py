@@ -1,5 +1,3 @@
-# -*- coding: utf-8 *-*
-
 # This file is part of wger Workout Manager.
 #
 # wger Workout Manager is free software: you can redistribute it and/or modify
@@ -31,8 +29,7 @@ class Command(BaseCommand):
     help = 'Read out the user submitted exercise'
 
     def handle(self, **options):
-
-        exercises = Exercise.objects.accepted()
+        exercises = Exercise.objects.all()
         usernames = []
         for exercise in exercises:
             if exercise.user not in usernames:

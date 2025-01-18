@@ -15,24 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 
 # Django
-from django.db.models import Q
-from django.db.models.signals import (
-    post_save,
-    pre_delete,
-)
+from django.db.models.signals import post_save
 
 # wger
-from wger.core.models import Language
-from wger.exercises.models import (
-    Exercise,
-    Muscle,
-)
 from wger.gym.helpers import get_user_last_activity
 from wger.manager.models import (
     WorkoutLog,
     WorkoutSession,
 )
-from wger.utils.cache import delete_template_fragment_cache
 
 
 def update_activity_cache(sender, instance, **kwargs):
@@ -47,26 +37,3 @@ def update_activity_cache(sender, instance, **kwargs):
 
 post_save.connect(update_activity_cache, sender=WorkoutSession)
 post_save.connect(update_activity_cache, sender=WorkoutLog)
-
-# TODO: this seems to cause problems when users are deleted
-#       perhaps because of the cascading, needs to be checked
-# post_delete.connect(update_activity_cache, sender=WorkoutSession)
-# post_delete.connect(update_activity_cache, sender=WorkoutLog)
-
-
-def reset_muscle_cache(sender, instance, **kwargs):
-    exercises = Exercise.objects.filter(
-        Q(exercise_base__muscles=instance)
-        | Q(exercise_base__muscles_secondary=instance)
-    ).all()
-    languages = Language.objects.all()
-
-    for exercise in exercises:
-        for language in languages:
-            delete_template_fragment_cache(
-                'exercise-detail-muscles', "{}-{}".format(exercise.id, language.id)
-            )
-
-
-post_save.connect(reset_muscle_cache, sender=Muscle)
-pre_delete.connect(reset_muscle_cache, sender=Muscle)

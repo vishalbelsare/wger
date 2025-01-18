@@ -32,6 +32,7 @@ from django.views.generic.edit import ModelFormMixin
 
 # Third Party
 import bleach
+from bleach.css_sanitizer import CSSSanitizer
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import (
     ButtonHolder,
@@ -63,7 +64,7 @@ class WgerMultiplePermissionRequiredMixin(PermissionRequiredMixin):
         return False
 
 
-class WgerPermissionMixin(object):
+class WgerPermissionMixin:
     """
     Custom permission mixim
 
@@ -92,7 +93,7 @@ class WgerPermissionMixin(object):
         if self.login_required or self.permission_required:
             if not request.user.is_authenticated:
                 return HttpResponseRedirect(
-                    reverse_lazy('core:user:login') + '?next={0}'.format(request.path)
+                    reverse_lazy('core:user:login') + f'?next={request.path}'
                 )
 
             if self.permission_required:
@@ -210,7 +211,7 @@ class WgerFormMixin(ModelFormMixin):
     def get_form(self, form_class=None):
         """Return an instance of the form to be used in this view."""
         form = super(WgerFormMixin, self).get_form(form_class)
-        if not hasattr(form, "helper"):
+        if not hasattr(form, 'helper'):
             form.helper = FormHelper()
         form.helper.form_id = slugify(self.request.path)
         form.helper.form_method = 'post'
@@ -237,14 +238,15 @@ class WgerFormMixin(ModelFormMixin):
 
         for field in self.clean_html:
             setattr(
-                form.instance, field,
+                form.instance,
+                field,
                 bleach.clean(
                     getattr(form.instance, field),
                     tags=HTML_TAG_WHITELIST,
                     attributes=HTML_ATTRIBUTES_WHITELIST,
-                    styles=HTML_STYLES_WHITELIST,
-                    strip=True
-                )
+                    css_sanitizer=CSSSanitizer(allowed_css_properties=HTML_STYLES_WHITELIST),
+                    strip=True,
+                ),
             )
 
         if self.get_messages():
@@ -253,7 +255,7 @@ class WgerFormMixin(ModelFormMixin):
         return super(WgerFormMixin, self).form_valid(form)
 
 
-class WgerDeleteMixin(ModelFormMixin):
+class WgerDeleteMixin:
     form_action = ''
     form_action_urlname = ''
     title = ''
@@ -281,7 +283,7 @@ class WgerDeleteMixin(ModelFormMixin):
     def get_form(self, form_class=None):
         """Return an instance of the form to be used in this view."""
         form = super(WgerDeleteMixin, self).get_form(form_class)
-        if not hasattr(form, "helper"):
+        if not hasattr(form, 'helper'):
             form.helper = FormHelper()
         form.helper.form_id = slugify(self.request.path)
         form.helper.form_method = 'post'

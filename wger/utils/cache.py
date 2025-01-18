@@ -35,6 +35,10 @@ def reset_workout_canonical_form(workout_id):
     cache.delete(cache_mapper.get_workout_canonical(workout_id))
 
 
+def reset_exercise_api_cache(uuid: str):
+    cache.delete(CacheKeyMapper.get_exercise_api_key(uuid))
+
+
 def reset_workout_log(user_pk, year, month, day=None):
     """
     Resets the cached workout logs
@@ -47,41 +51,30 @@ def reset_workout_log(user_pk, year, month, day=None):
     cache.delete(cache_mapper.get_workout_log_list(log_hash))
 
 
-class CacheKeyMapper(object):
+class CacheKeyMapper:
     """
     Simple class for mapping the cache keys of different objects
     """
 
     # Keys used by the cache
     LANGUAGE_CACHE_KEY = 'language-{0}'
-    LANGUAGE_CONFIG_CACHE_KEY = 'language-config-{0}-{1}'
     INGREDIENT_CACHE_KEY = 'ingredient-{0}'
     WORKOUT_CANONICAL_REPRESENTATION = 'workout-canonical-representation-{0}'
     WORKOUT_LOG_LIST = 'workout-log-hash-{0}'
     NUTRITION_CACHE_KEY = 'nutrition-cache-log-{0}'
+    EXERCISE_API_KEY = 'base-uuid-{0}'
 
     def get_pk(self, param):
         """
         Small helper function that returns the PK for the given parameter
         """
-        try:
-            pk = param.pk
-        except AttributeError:
-            pk = param
-
-        return pk
+        return param.pk if hasattr(param, 'pk') else param
 
     def get_language_key(self, param):
         """
         Return the language cache key
         """
         return self.LANGUAGE_CACHE_KEY.format(self.get_pk(param))
-
-    def get_language_config_key(self, param, item):
-        """
-        Return the language cache key
-        """
-        return self.LANGUAGE_CONFIG_CACHE_KEY.format(self.get_pk(param), item)
 
     def get_ingredient_key(self, param):
         """
@@ -106,6 +99,13 @@ class CacheKeyMapper(object):
         get nutritional info values canonical representation  using primary key.
         """
         return self.NUTRITION_CACHE_KEY.format(self.get_pk(params))
+
+    @classmethod
+    def get_exercise_api_key(cls, base_uuid: str):
+        """
+        get the exercise base cache key used in the API
+        """
+        return cls.EXERCISE_API_KEY.format(base_uuid)
 
 
 cache_mapper = CacheKeyMapper()

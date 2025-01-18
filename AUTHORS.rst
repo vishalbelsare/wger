@@ -57,6 +57,8 @@ Developers
 * Calvin Walden - https://github.com/calvinrw
 * Jack Mulligan - https://github.com/jackmulligan-ire
 * Kristopher Newsome - https://github.com/sysadmin75
+* Emma Muth - https://github.com/emmaamuth
+* Sophia Reed - https://github.com/sophialr
 * Leninux - https://github.com/RedRudeBoy
 * Ayush Kumar - https://github.com/gr8ayu
 * Gorkem Arslan - https://github.com/gorkemarslan
@@ -64,6 +66,27 @@ Developers
 * absolutely-not-bot - https://github.com/absolutely-not-bot
 * Jaspreet Dhillon - https://github.com/jaspreetsd902
 * Sofiko Alaverdashvili - https://github.com/sophiamartelli
+* Oebele Lijzenga - https://github.com/olijzenga
+* Kade - https://github.com/kp5431/
+* Tom Bowyer - https://github.com/ImTheTom
+* Rohan Karan - https://github.com/RohanKaran
+* Mohammad Rafigh - https://github.com/mohammadrafigh
+* Bernardo Koen - https://github.com/BernardoKoen
+* Gabriel Liss - https://github.com/gabeliss
+* Alexandra Rhodes - https://github.com/arhodes130
+* Ben Southcott - https://github.com/blsouthcott
+* Jayanth Bontha - https://github.com/JayanthBontha
+* Roelof Rietbroek  https://github.com/strawpants
+* Ethan Winters - https://github.com/ebwinters
+* Dieter Plaetinck - https://github.com/Dieterbe
+* Jonathan La Field - https://github.com/JLaField
+* Kevin Moy - https://github.com/kmoy1
+* Taylor Fuller - https://github.com/taylor-fuller
+* eyJhb - https://github.com/eyJhb
+* Joshua Shelley - https://github.com/navyjosh
+* Matt Harrison - https://github.com/Maralai
+* Ali Rahbar - https://github.com/crypto-a
+
 
 Translators
 -----------
@@ -156,6 +179,7 @@ Translators
   - Krzysztof Tataradziński
   - Marius
   - Michał Jastrzębowski
+  - Marcin Schoenknecht
 
 * Ukrainian
 

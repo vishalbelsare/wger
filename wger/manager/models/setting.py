@@ -14,6 +14,9 @@
 #  You should have received a copy of the GNU Affero General Public License
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# Standard Library
+from decimal import Decimal
+
 # Django
 from django.core.validators import (
     MaxValueValidator,
@@ -27,7 +30,10 @@ from wger.core.models import (
     RepetitionUnit,
     WeightUnit,
 )
-from wger.exercises.models import Exercise
+from wger.exercises.models import (
+    Exercise,
+    ExerciseBase,
+)
 from wger.utils.cache import reset_workout_canonical_form
 
 # Local
@@ -40,8 +46,17 @@ class Setting(models.Model):
     Settings for an exercise (weight, reps, etc.)
     """
 
-    set = models.ForeignKey(Set, verbose_name=_('Sets'), on_delete=models.CASCADE)
-    exercise = models.ForeignKey(Exercise, verbose_name=_('Exercises'), on_delete=models.CASCADE)
+    set = models.ForeignKey(
+        Set,
+        verbose_name=_('Sets'),
+        on_delete=models.CASCADE,
+    )
+
+    exercise_base = models.ForeignKey(
+        ExerciseBase,
+        verbose_name=_('Exercises'),
+        on_delete=models.CASCADE,
+    )
     repetition_unit = models.ForeignKey(
         RepetitionUnit,
         verbose_name=_('Unit'),
@@ -69,7 +84,7 @@ class Setting(models.Model):
         decimal_places=2,
         blank=True,
         null=True,
-        validators=[MinValueValidator(0), MaxValueValidator(1500)]
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(1500))],
     )
     """Planed weight for the repetitions"""
 
@@ -100,13 +115,13 @@ class Setting(models.Model):
 
     # Metaclass to set some other properties
     class Meta:
-        ordering = ["order", "id"]
+        ordering = ['order', 'id']
 
     def __str__(self):
         """
         Return a more human-readable representation
         """
-        return f"setting {self.id} for exercise {self.exercise_id} in set {self.set_id}"
+        return f'setting {self.id} for exercise base {self.exercise_base_id} in set {self.set_id}'
 
     def save(self, *args, **kwargs):
         """

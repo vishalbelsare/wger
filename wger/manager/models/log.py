@@ -25,7 +25,7 @@ from wger.core.models import (
     RepetitionUnit,
     WeightUnit,
 )
-from wger.exercises.models import Exercise
+from wger.exercises.models import ExerciseBase
 from wger.utils.cache import reset_workout_log
 from wger.utils.fields import Html5DateField
 
@@ -46,11 +46,13 @@ class WorkoutLog(models.Model):
         editable=False,
         on_delete=models.CASCADE,
     )
-    exercise = models.ForeignKey(
-        Exercise,
+
+    exercise_base = models.ForeignKey(
+        ExerciseBase,
         verbose_name=_('Exercise'),
         on_delete=models.CASCADE,
     )
+
     workout = models.ForeignKey(
         Workout,
         verbose_name=_('Workout'),
@@ -111,13 +113,13 @@ class WorkoutLog(models.Model):
 
     # Metaclass to set some other properties
     class Meta:
-        ordering = ["date", "reps"]
+        ordering = ['date', 'reps']
 
     def __str__(self):
         """
         Return a more human-readable representation
         """
-        return "Log entry: {0} - {1} kg on {2}".format(self.reps, self.weight, self.date)
+        return f'Log entry: {self.reps} - {self.weight} kg on {self.date}'
 
     def get_owner_object(self):
         """

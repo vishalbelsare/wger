@@ -49,6 +49,7 @@ class LicenseListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
     Overview of all available licenses
     """
+
     model = License
     permission_required = 'core.add_license'
     template_name = 'license/list.html'
@@ -91,7 +92,6 @@ class LicenseDeleteView(WgerDeleteMixin, LoginRequiredMixin, PermissionRequiredM
     """
 
     model = License
-    fields = ['full_name', 'short_name', 'url']
     success_url = reverse_lazy('core:license:list')
     permission_required = 'core.delete_license'
 

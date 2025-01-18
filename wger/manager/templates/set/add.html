@@ -1,4 +1,4 @@
-{% extends extend_template %}
+{% extends 'base_wide.html' %}
 {% load i18n static crispy_forms_tags %}
 
 
@@ -31,6 +31,7 @@ function wgerCustomPageInit()
 
     {% csrf_token %}
     {{ form.exercises|as_crispy_field }}
+    {{ form.english_results|as_crispy_field }}
     {{ form.comment|as_crispy_field }}
     <div class="form-group">
 
@@ -59,7 +60,7 @@ automatically becomes "4 x 10".{% endblocktranslate %}</span>
     <div class="form-group">
         <div id="formsets">
         {% for formset in formsets %}
-            {% include 'set/formset.html' with exercise=formset.exercise formset=formset.formset helper=helper %}
+            {% include 'set/formset.html' with base=formset.exercise_base formset=formset.formset helper=helper %}
         {% endfor %}
         </div>
     </div>

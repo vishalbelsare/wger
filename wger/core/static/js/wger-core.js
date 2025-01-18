@@ -15,359 +15,12 @@
  */
 'use strict';
 
-/*
- AJAX related functions
-
- See https://docs.djangoproject.com/en/dev/ref/contrib/csrf/#ajax for
- more information
- */
-function getCookie(name) {
-  var cookie;
-  var cookies;
-  var cookieValue = null;
-  var loopCounter;
-  if (document.cookie && document.cookie !== '') {
-    cookies = document.cookie.split(';');
-    for (loopCounter = 0; loopCounter < cookies.length; loopCounter++) {
-      cookie = jQuery.trim(cookies[loopCounter]);
-      // Does this cookie string begin with the name we want?
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
-}
-
-function csrfSafeMethod(method) {
-  // These HTTP methods do not require CSRF protection
-  return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
-}
-
-$.ajaxSetup({
-  crossDomain: false, // obviates need for sameOrigin test
-  beforeSend: function (xhr, settings) {
-    if (!csrfSafeMethod(settings.type)) {
-      xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
-    }
-  }
-});
 
 function getCurrentLanguage() {
   // Returns a short name, like 'en' or 'de'
   return $('#current-language').data('currentLanguage');
 }
 
-/*
- Setup sortable to make the sets sortable
- */
-function wgerSetupSortable() {
-  var elements = document.getElementsByTagName('tbody');
-  $.each(elements, function (index, element) {
-    Sortable.create(element, {
-      handle: '.dragndrop-handle',
-      animation: 150,
-      onUpdate: function (event) {
-        var dayId;
-        dayId = $(event.target).parents('table').data('id');
-        $.each(($(event.from).children('tr')), function (eventIndex, eventElement) {
-          var trElement;
-          var setId;
-          trElement = $(eventElement);
-
-          // The last table element has no ID attribute (has only the 'add exercise' link
-          if (trElement.data('id')) {
-            setId = trElement.data('id');
-            $.ajax({
-              url: '/api/v2/set/' + setId + '/',
-              type: 'PATCH',
-              data: { order: eventIndex + 1 }
-            });
-          }
-        });
-
-        // Replace the content of the table with a fresh version that has
-        // correct indexes.
-        $.get('/' + getCurrentLanguage() + '/workout/day/' + dayId + '/view/');
-        $('#div-day-' + dayId)
-          .load('/' + getCurrentLanguage() + '/workout/day/' + dayId + '/view/');
-      }
-    });
-  });
-}
-
-/*
- Functions related to the user's preferences
- */
-
-
-/*
- Updates a single field in the user profile
- */
-function setProfileField(field, newValue) {
-  var dataDict = {};
-  dataDict[field] = newValue;
-  $.get('/api/v2/userprofile', function () {
-  }).done(function (userprofile) {
-    //console.log('Updating profile field "' + field + '" to value: ' + newValue);
-    $.ajax({
-      url: '/api/v2/userprofile/' + userprofile.results[0].id + '/',
-      type: 'PATCH',
-      data: dataDict
-    });
-  });
-}
-
-/*
- Get a single field from the user's profile.
- Synchronous request, use sparingly!
- */
-function getProfileField(field) {
-  var result;
-  result = null;
-  $.ajax({
-    url: '/api/v2/userprofile/',
-    type: 'GET',
-    async: false,
-    success: function (userprofile) {
-      result = userprofile.results[0][field];
-    }
-  });
-  return result;
-}
-
-/*
- Get the current user's username.
- Do not use with anonymous users!
- Synchronous request, use sparingly!
- */
-function wgerGetUsername() {
-  var userId;
-  var result;
-  userId = getProfileField('user');
-  result = null;
-  $.ajax({
-    url: '/api/v2/userprofile/' + userId + '/username/',
-    type: 'GET',
-    async: false,
-    success: function (user) {
-      result = user.username;
-    }
-  });
-  return result;
-}
-
-function wgerToggleComments() {
-  $('#exercise-comments-toggle').click(function (e) {
-    var showComment;
-    e.preventDefault();
-
-    showComment = getProfileField('show_comments');
-    if (!showComment) {
-      $('.exercise-comments').show();
-    } else {
-      $('.exercise-comments').hide();
-    }
-
-    // Update user profile
-    setProfileField('show_comments', !showComment);
-  });
-}
-
-function wgerToggleReadOnlyAccess() {
-  $('#toggle-ro-access').click(function (e) {
-    var $shariffModal;
-    var roAccess;
-    e.preventDefault();
-    roAccess = getProfileField('ro_access');
-
-    // Update user profile
-    setProfileField('ro_access', !roAccess);
-
-    // Hide and show appropriate divs
-
-    $shariffModal = $('#shariffModal');
-    if (!roAccess) {
-      $shariffModal.find('.shariff').removeClass('d-none');
-      $shariffModal.find('.noRoAccess').addClass('d-none');
-    } else {
-      $shariffModal.find('.shariff').addClass('d-none');
-      $shariffModal.find('.noRoAccess').removeClass('d-none');
-    }
-  });
-}
-
-/*
- Init calls for tinyMCE editor
- */
-function wgerInitTinymce() {
-  // Only try to init it on pages that loaded its JS file (so they probably need it)
-  //
-  // See the following links on detail about configuring the menus
-  // http://www.tinymce.com/wiki.php/Configuration:toolbar
-  // http://www.tinymce.com/wiki.php/Configuration:menu
-  if (typeof tinyMCE !== 'undefined') {
-    tinyMCE.init({
-      // General options
-      mode: 'textareas',
-      width: '100%',
-
-      entity_encoding: 'raw',
-      plugins: "lists",
-      menubar: false,
-      toolbar: 'undo redo | bold italic | bullist numlist '
-    });
-  }
-}
-
-/*
- Open a modal dialog for form editing
- */
-function modalDialogFormEdit() {
-  var $submit;
-  var $form;
-  $form = $('#ajax-info-content').find('form');
-  $submit = $($form).find('#form-save');
-
-  $submit.click(function (e) {
-    var formData;
-    var formAction;
-    e.preventDefault();
-    formAction = $form.attr('action');
-    formData = $form.serialize();
-
-    // Unbind all click elements, so the form doesn't get submitted twice
-    // if the user clicks 2 times on the button (while there is already a request
-    // happening in the background)
-    $submit.off();
-
-    // Show a loader while we fetch the real page
-    $form.html('<div style="text-align:center;">' +
-      '<img src="/static/images/loader.svg" ' +
-      'width="48" ' +
-      'height="48"> ' +
-      '</div>');
-    $('#ajax-info-title').html('Processing'); // TODO: translate this
-
-    // OK, we did the POST, what do we do with the result?
-    $.ajax({
-      type: 'POST',
-      url: formAction,
-      data: formData,
-      beforeSend: function (jqXHR) {
-        // Send a custom header so django's messages are not displayed in the next
-        // request which will be not be displayed to the user, but on the next one
-        // that will
-        jqXHR.setRequestHeader('X-wger-no-messages', '1');
-      },
-      success: function (data, textStatus, jqXHR) {
-        var url = jqXHR.getResponseHeader('X-wger-redirect');
-        if (url) {
-          window.location.href = url;
-          /*
-           if(document.URL.indexOf(url)) {
-           history.pushState({}, "", url);
-           }
-           */
-        } else if ($(data).find('form .has-error').length > 0) {
-          // we must do the same with the new form as before, binding the click-event,
-          // checking for errors etc, so it calls itself here again.
-          $form.html($(data).find('form').html());
-          $('#ajax-info-title').html($(data).find('#page-title').html());
-          modalDialogFormEdit();
-        } else {
-          console.log('No X-wger-redirect found but also no .has-error!');
-          $('#wger-ajax-info').modal('hide');
-          $form.html(data);
-        }
-
-        // Call other custom initialisation functions
-        // (e.g. if the form as an autocompleter, it has to be initialised again)
-        if (typeof wgerCustomModalInit !== 'undefined') {
-          wgerCustomModalInit(); // eslint-disable-line no-undef
-        }
-
-        if (typeof wgerCustomPageInit !== 'undefined') {
-          wgerCustomPageInit(); // eslint-disable-line no-undef
-        }
-      },
-      error: function (jqXHR) {
-        // console.log(errorThrown); // INTERNAL SERVER ERROR
-        $('#ajax-info-content').html(jqXHR.responseText);
-      }
-    });
-  });
-}
-
-function wgerFormModalDialog() {
-  var $wgerModalDialog;
-  $wgerModalDialog = $('.wger-modal-dialog');
-  // Unbind all other click events so we don't do this more than once
-  $wgerModalDialog.off();
-
-  // Load the edit dialog when the user clicks on an edit link
-  $wgerModalDialog.click(function (e) {
-    var $ajaxInfoContent;
-    var targetUrl;
-    e.preventDefault();
-    targetUrl = $(this).attr('href');
-
-    // It's not possible to have more than one modal open at any time, so close them
-    $('.modal').modal('hide');
-
-    // Show a loader while we fetch the real page
-    $ajaxInfoContent = $('#ajax-info-content');
-    $ajaxInfoContent.html('<div style="text-align:center;">' +
-      '<img src="/static/images/loader.svg" ' +
-      'width="48" ' +
-      'height="48"> ' +
-      '</div>');
-    $('#ajax-info-title').html('Loading...');
-    $('#wger-ajax-info').modal('show');
-
-    $ajaxInfoContent.load(targetUrl + ' .wger-form',
-      function (responseText, textStatus, XMLHttpRequest) {
-        var $ajaxInfoTitle;
-        var modalTitle;
-        $ajaxInfoTitle = $('#ajax-info-title');
-        if (textStatus === 'error') {
-          $ajaxInfoTitle.html('Sorry but an error occured');
-          $('#ajax-info-content').html(XMLHttpRequest.status + ' ' + XMLHttpRequest.statusText);
-        }
-
-        // Call other custom initialisation functions
-        // (e.g. if the form as an autocompleter, it has to be initialised again)
-        if (typeof wgerCustomModalInit !== 'undefined') {
-          // Function is defined in templates. Eslint doesn't check the templates resulting in a
-          // un-def error message.
-          wgerCustomModalInit(); // eslint-disable-line no-undef
-        }
-
-        // Set the new title
-        modalTitle = '';
-        if ($(responseText).find('#page-title').length > 0) {
-          // Complete HTML page
-          modalTitle = $(responseText).find('#page-title').html();
-        } else {
-          // Page fragment
-          modalTitle = $(responseText).filter('#page-title').html();
-        }
-        $ajaxInfoTitle.html(modalTitle);
-
-        // If there is a form in the modal dialog (there usually is) prevent the submit
-        // button from submitting it and do it here with an AJAX request. If there
-        // are errors (there is an element with the class 'ym-error' in the result)
-        // reload the content back into the dialog so the user can correct the entries.
-        // If there isn't assume all was saved correctly and load that result into the
-        // page's main DIV (#main-content). All this must be done like this because there
-        // doesn't seem to be any reliable and easy way to detect redirects with AJAX.
-        if ($(responseText).find('.wger-form').length > 0) {
-          modalDialogFormEdit();
-        }
-      });
-  });
-}
 
 /*
  Returns a random hex string. This is useful, e.g. to add a unique ID to generated
@@ -384,8 +37,8 @@ function getRandomHex() {
  Template-like function that adds form elements to the ajax exercise selection in the edit set page
  */
 function addExercise(exercise) {
-  var $exerciseSearchLog;
-  var resultDiv;
+  let $exerciseSearchLog;
+  let resultDiv;
   resultDiv = '<div id="DIV-ID" class="ajax-exercise-select">\n' +
     '  <a href="#" ' +
     'data-role="button" ' +
@@ -408,16 +61,16 @@ function addExercise(exercise) {
   $exerciseSearchLog.trigger('create');
 }
 
-function getExerciseFormset(exerciseId) {
-  var formsetUrl;
-  var setValue;
+function getExerciseFormset(baseId) {
+  let formsetUrl;
+  let setValue;
   setValue = $('#id_sets').val();
-  if (setValue && parseInt(setValue, 10) && exerciseId && parseInt(exerciseId, 10)) {
+  if (setValue && parseInt(setValue, 10) && baseId && parseInt(baseId, 10)) {
     formsetUrl = '/' + getCurrentLanguage() +
-      '/workout/set/get-formset/' + exerciseId + '/' + setValue;
+      '/routine/set/get-formset/' + baseId + '/' + setValue;
 
     $.get(formsetUrl, function (data) {
-      var $formsets;
+      let $formsets;
       $formsets = $('#formsets');
       $formsets.append(data);
       $('#exercise-search-log').scrollTop(0);
@@ -430,22 +83,23 @@ function getExerciseFormset(exerciseId) {
  Updates all exercise formsets, e.g. when the number of sets changed
  */
 function updateAllExerciseFormset() {
-  var setValue;
+  let setValue;
   setValue = $('#id_sets').val();
   if (setValue && parseInt(setValue, 10)) {
     $.each($('#exercise-search-log').find('input'), function (index, value) {
-      var promise;
-      var exerciseId;
-      var formsetUrl;
+      let promise;
+      let exerciseId;
+      let formsetUrl;
       exerciseId = value.value;
       promise = $().promise();
       if (exerciseId && parseInt(exerciseId, 10)) {
         formsetUrl = '/' + getCurrentLanguage() +
-          '/workout/set/get-formset/' + exerciseId + '/' + setValue;
+          '/routine/set/' +
+          'get-formset/' + exerciseId + '/' + setValue;
         promise.done(function () {
           promise = $.get(formsetUrl, function (data) {
-            var $formsets;
-            $('#formset-exercise-' + exerciseId).remove();
+            let $formsets;
+            $('#formset-base-' + exerciseId).remove();
             $formsets = $('#formsets');
             $formsets.append(data);
             $('#exercise-search-log').scrollTop(0);
@@ -463,18 +117,30 @@ function updateAllExerciseFormset() {
  */
 function initRemoveExerciseFormset() {
   $('.ajax-exercise-select a').click(function (e) {
-    var exerciseId;
+    let baseId;
     e.preventDefault();
-    exerciseId = $(this).parent('div').find('input').val();
-    $('#formset-exercise-' + exerciseId).remove();
+    baseId = $(this).parent('div').find('input').val();
+    $('#formset-base-' + baseId).remove();
     $(this).parent('div').remove();
   });
+}
+
+function getSearchLanguages() {
+  let search_languages = getCurrentLanguage();
+  let search_english = $('#id_english_results')[0].checked;
+  if (search_english === true) {
+    search_languages = search_languages + ',' + 'en';
+  }
+
+  return search_languages;
 }
 
 function wgerInitEditSet() {
   // Initialise the autocompleter (our widget, defined above)
   $('#exercise-search').autocomplete({
-    serviceUrl: '/api/v2/exercise/search/?language=' + getCurrentLanguage(),
+    serviceUrl: function () {
+      return '/api/v2/exercise/search/?language=' + getSearchLanguages()
+    },
     showNoSuggestionNotice: true,
     groupBy: 'category',
     paramName: 'term',
@@ -482,12 +148,12 @@ function wgerInitEditSet() {
     onSelect: function (suggestion) {
       // Add the exercise to the list
       addExercise({
-        id: suggestion.data.id,
+        id: suggestion.data.base_id,
         value: suggestion.value
       });
 
       // Load formsets
-      getExerciseFormset(suggestion.data.id);
+      getExerciseFormset(suggestion.data.base_id);
 
       // Init the remove buttons
       initRemoveExerciseFormset();
@@ -500,17 +166,17 @@ function wgerInitEditSet() {
 
   // Mobile select box
   $('#id_exercise_list').change(function () {
-    var $idExerciseList;
-    var exerciseId;
-    var exerciseName;
+    let $idExerciseList;
+    let baseId;
+    let exerciseName;
     $idExerciseList = $('#id_exercise_list');
-    exerciseId = $idExerciseList.val();
+    baseId = $idExerciseList.val();
     exerciseName = $idExerciseList.find(':selected').text();
     addExercise({
-      id: exerciseId,
+      id: baseId,
       value: exerciseName
     });
-    getExerciseFormset(exerciseId);
+    getExerciseFormset(baseId);
     initRemoveExerciseFormset();
   });
 
@@ -533,10 +199,10 @@ function wgerInitEditSet() {
   $('#id_categories_list').on('change', function () {
     // Remember to filter by exercise language
     $.get('/api/v2/language/?short_name=' + getCurrentLanguage(), function (data) {
-      var filter;
-      var baseUrl;
-      var categoryPk;
-      var languagePk;
+      let filter;
+      let baseUrl;
+      let categoryPk;
+      let languagePk;
       languagePk = data.results[0].id;
       categoryPk = $('#id_categories_list').val();
       baseUrl = '/api/v2/exercise/';
@@ -549,7 +215,7 @@ function wgerInitEditSet() {
       $.get(baseUrl + filter, function (exerciseData) {
         // Sort the results by name, at the moment it's not possible
         // to search and sort the API at the same time
-        var $idExerciseList;
+        let $idExerciseList;
         exerciseData.results.sort(function (a, b) {
           if (a.name < b.name) {
             return -1;
@@ -576,28 +242,6 @@ function wgerInitEditSet() {
   });
 }
 
-/*
- Helper function to load the target of a link into the main-content DIV (the main left colum)
- */
-function wgerLoadMaincontent() {
-  $('.load-maincontent').click(function (e) {
-    var targetUrl;
-    e.preventDefault();
-    targetUrl = $(this).attr('href');
-
-    $.get(targetUrl, function (data) {
-      var currentUrl;
-      // Load the data
-      $('#main-content').html($(data).find('#main-content').html());
-
-      // Update the browser's history
-      currentUrl = $(data).find('#current-url').data('currentUrl');
-      history.pushState({}, '', currentUrl);
-
-      wgerLoadMaincontent();
-    });
-  });
-}
 
 /*
  Helper function used in the workout log dialog to fetch existing workout sessions through the
@@ -605,7 +249,7 @@ function wgerLoadMaincontent() {
  */
 function wgerGetWorkoutSession() {
   $('#id_date').on('change', function () {
-    var date = $('#id_date').val();
+    let date = $('#id_date').val();
     if (date) {
       $.get('/api/v2/workoutsession/?date=' + date, function (data) {
         if (data.results.length === 1) {
@@ -627,14 +271,14 @@ function wgerGetWorkoutSession() {
 $(document).ready(function () {
   // Handle the workout PDF download options for workouts
   $('#download-pdf-button').click(function (e) {
-    var targetUrl;
-    var token;
-    var uid;
-    var workoutId;
-    var downloadComments;
-    var downloadImages;
-    var downloadType;
-    var downloadInfo;
+    let targetUrl;
+    let token;
+    let uid;
+    let workoutId;
+    let downloadComments;
+    let downloadImages;
+    let downloadType;
+    let downloadInfo;
     e.preventDefault();
 
     downloadInfo = $('#pdf-download-info');
@@ -648,7 +292,7 @@ $(document).ready(function () {
 
     // Put together and redirect
     targetUrl = '/' + getCurrentLanguage() +
-      '/workout/' + workoutId + '/pdf' +
+      '/routine/' + workoutId + '/pdf' +
       '/' + downloadType +
       '/' + downloadImages +
       '/' + downloadComments +
@@ -659,14 +303,14 @@ $(document).ready(function () {
 
   // Handle the workout PDF download options for schedules
   $('#download-pdf-button-schedule').click(function (e) {
-    var targetUrl;
-    var token;
-    var uid;
-    var scheduleId;
-    var downloadComments;
-    var downloadImages;
-    var downloadType;
-    var downloadInfo;
+    let targetUrl;
+    let token;
+    let uid;
+    let scheduleId;
+    let downloadComments;
+    let downloadImages;
+    let downloadType;
+    let downloadInfo;
     e.preventDefault();
 
     downloadInfo = $('#pdf-download-info');
@@ -680,7 +324,7 @@ $(document).ready(function () {
 
     // Put together and redirect
     targetUrl = '/' + getCurrentLanguage() +
-      '/workout/schedule/' + scheduleId + '/pdf' +
+      '/routine/schedule/' + scheduleId + '/pdf' +
       '/' + downloadType +
       '/' + downloadImages +
       '/' + downloadComments +

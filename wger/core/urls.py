@@ -15,12 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 
 # Django
-from django.conf.urls import (
-    include,
-    url,
-)
+from django.conf.urls import include
 from django.contrib.auth import views
-from django.urls import path
+from django.urls import (
+    path,
+    re_path,
+)
 from django.views.generic import TemplateView
 
 # wger
@@ -71,72 +71,20 @@ patterns_user = [
         views.LoginView.as_view(template_name='user/login.html', authentication_form=UserLoginForm),
         name='login',
     ),
-    path(
-        'logout',
-        user.logout,
-        name='logout',
-    ),
-    path(
-        'delete',
-        user.delete,
-        name='delete',
-    ),
-    path(
-        '<int:user_pk>/delete',
-        user.delete,
-        name='delete',
-    ),
-    path(
-        '<int:user_pk>/trainer-login',
-        user.trainer_login,
-        name='trainer-login',
-    ),
-    path(
-        'registration',
-        user.registration,
-        name='registration',
-    ),
-    path(
-        'preferences',
-        user.preferences,
-        name='preferences',
-    ),
-    path(
-        'api-key',
-        user.api_key,
-        name='api-key',
-    ),
-    path(
-        'demo-entries',
-        misc.demo_entries,
-        name='demo-entries',
-    ),
-    path(
-        '<int:pk>/activate',
-        user.UserActivateView.as_view(),
-        name='activate',
-    ),
-    path(
-        '<int:pk>/deactivate',
-        user.UserDeactivateView.as_view(),
-        name='deactivate',
-    ),
-    path(
-        '<int:pk>/edit',
-        user.UserEditView.as_view(),
-        name='edit',
-    ),
-    path(
-        '<int:pk>/overview',
-        user.UserDetailView.as_view(),
-        name='overview',
-    ),
-    path(
-        'list',
-        user.UserListView.as_view(),
-        name='list',
-    ),
-
+    path('logout', user.logout, name='logout'),
+    path('delete', user.delete, name='delete'),
+    path('<int:user_pk>/delete', user.delete, name='delete'),
+    path('confirm-email', user.confirm_email, name='confirm-email'),
+    path('<int:user_pk>/trainer-login', user.trainer_login, name='trainer-login'),
+    path('registration', user.registration, name='registration'),
+    path('preferences', user.preferences, name='preferences'),
+    path('api-key', user.api_key, name='api-key'),
+    path('demo-entries', misc.demo_entries, name='demo-entries'),
+    path('<int:pk>/activate', user.UserActivateView.as_view(), name='activate'),
+    path('<int:pk>/deactivate', user.UserDeactivateView.as_view(), name='deactivate'),
+    path('<int:pk>/edit', user.UserEditView.as_view(), name='edit'),
+    path('<int:pk>/overview', user.UserDetailView.as_view(), name='overview'),
+    path('list', user.UserListView.as_view(), name='list'),
     # Password reset is implemented by Django, no need to cook our own soup here
     # (besides the templates)
     path(
@@ -154,7 +102,7 @@ patterns_user = [
         views.PasswordResetDoneView.as_view(),
         name='password_reset_done',
     ),
-    url(
+    re_path(
         r'^password/reset/check/(?P<uidb64>[0-9A-Za-z_\-]+)/(?P<token>[0-9A-Za-z]{1,13}-[0-9A-Za-z]{1,33})$',
         user.WgerPasswordResetConfirmView.as_view(),
         name='password_reset_confirm',
@@ -242,17 +190,14 @@ patterns_weight_units = [
 # Actual patterns
 #
 urlpatterns = [
-
     # The landing page
     path('', misc.index, name='index'),
-
     # The dashboard
     path('dashboard', misc.dashboard, name='dashboard'),
-
     # Others
     path(
         'imprint',
-        TemplateView.as_view(template_name="misc/about.html"),
+        TemplateView.as_view(template_name='misc/about.html'),
         name='imprint',
     ),
     path(
@@ -260,12 +205,12 @@ urlpatterns = [
         misc.FeedbackClass.as_view(),
         name='feedback',
     ),
-    path('language/', include((patterns_language, 'language'), namespace="language")),
-    path('user/', include((patterns_user, 'user'), namespace="user")),
-    path('license/', include((patterns_license, 'license'), namespace="license")),
+    path('language/', include((patterns_language, 'language'), namespace='language')),
+    path('user/', include((patterns_user, 'user'), namespace='user')),
+    path('license/', include((patterns_license, 'license'), namespace='license')),
     path(
         'repetition-unit/',
-        include((patterns_repetition_units, 'repetition-unit'), namespace="repetition-unit")
+        include((patterns_repetition_units, 'repetition-unit'), namespace='repetition-unit'),
     ),
-    path('weight-unit/', include((patterns_weight_units, 'weight-unit'), namespace="weight-unit")),
+    path('weight-unit/', include((patterns_weight_units, 'weight-unit'), namespace='weight-unit')),
 ]

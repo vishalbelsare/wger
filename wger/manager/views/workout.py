@@ -68,53 +68,36 @@ from wger.utils.helpers import make_token
 
 logger = logging.getLogger(__name__)
 
-
 # ************************
 # Workout functions
 # ************************
-@login_required
-def overview(request):
-    """
-    An overview of all the user's workouts
-    """
-
-    context = {}
-
-    workouts = Workout.objects.filter(user=request.user)
-    (current_workout, schedule) = Schedule.objects.get_current_workout(request.user)
-    context['workouts'] = workouts
-    context['current_workout'] = current_workout
-    context['title'] = _('Your workouts')
-    context['template_overview'] = False
-
-    return render(request, 'workout/overview.html', context)
 
 
 @login_required
 def template_overview(request):
-    """
-
-    """
+    """ """
     return render(
-        request, 'workout/overview.html', {
+        request,
+        'workout/overview.html',
+        {
             'workouts': Workout.templates.filter(user=request.user),
             'title': _('Your templates'),
-            'template_overview': True
-        }
+            'template_overview': True,
+        },
     )
 
 
 @login_required
 def public_template_overview(request):
-    """
-
-    """
+    """ """
     return render(
-        request, 'workout/overview.html', {
+        request,
+        'workout/overview.html',
+        {
             'workouts': Workout.templates.filter(is_public=True),
             'title': _('Public templates'),
-            'template_overview': True
-        }
+            'template_overview': True,
+        },
     )
 
 
@@ -122,7 +105,6 @@ def view(request, pk):
     """
     Show the workout with the given ID
     """
-    template_data = {}
     workout = get_object_or_404(Workout, pk=pk)
     user = workout.user
     is_owner = request.user == user
@@ -132,14 +114,15 @@ def view(request, pk):
 
     uid, token = make_token(user)
 
-    template_data['workout'] = workout
-    template_data['uid'] = uid
-    template_data['token'] = token
-    template_data['is_owner'] = is_owner
-    template_data['owner_user'] = user
-    template_data['show_shariff'] = is_owner
+    context = {
+        'workout': workout,
+        'uid': uid,
+        'token': token,
+        'is_owner': is_owner,
+        'owner_user': user,
+    }
 
-    return render(request, 'workout/view.html', template_data)
+    return render(request, 'workout/view.html', context)
 
 
 @login_required()
@@ -176,7 +159,6 @@ def copy_workout(request, pk):
         workout_form = WorkoutCopyForm(request.POST)
 
         if workout_form.is_valid():
-
             # Copy workout
             workout_copy: Workout = copy.copy(workout)
             workout_copy.pk = None
@@ -263,7 +245,6 @@ class WorkoutDeleteView(WgerDeleteMixin, LoginRequiredMixin, DeleteView):
     """
 
     model = Workout
-    fields = ('name', )
     success_url = reverse_lazy('manager:workout:overview')
     messages = gettext_lazy('Successfully deleted')
 

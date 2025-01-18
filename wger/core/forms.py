@@ -14,8 +14,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 
+# Standard Library
+from datetime import date
+
 # Django
 from django import forms
+from django.contrib.auth import authenticate
 from django.contrib.auth.forms import (
     AuthenticationForm,
     UserCreationForm,
@@ -32,8 +36,6 @@ from django.forms import (
 from django.utils.translation import gettext as _
 
 # Third Party
-from captcha.fields import ReCaptchaField
-from captcha.widgets import ReCaptchaV3
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import (
     HTML,
@@ -44,6 +46,8 @@ from crispy_forms.layout import (
     Row,
     Submit,
 )
+from django_recaptcha.fields import ReCaptchaField
+from django_recaptcha.widgets import ReCaptchaV3
 
 # wger
 from wger.core.models import UserProfile
@@ -54,28 +58,70 @@ class UserLoginForm(AuthenticationForm):
     Form for logins
     """
 
-    def __init__(self, *args, **kwargs):
+    authenticate_on_clean = True
+
+    def __init__(self, authenticate_on_clean=True, *args, **kwargs):
         super(UserLoginForm, self).__init__(*args, **kwargs)
+
+        self.authenticate_on_clean = authenticate_on_clean
 
         self.helper = FormHelper()
         self.helper.add_input(Submit('submit', _('Login'), css_class='btn-success btn-block'))
         self.helper.form_class = 'wger-form'
         self.helper.layout = Layout(
             Row(
-                Column('username', css_class='form-group col-6 mb-0'),
-                Column('password', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
+                Column('username', css_class='col-6'),
+                Column('password', css_class='col-6'),
+                css_class='form-row',
             )
         )
+
+    def clean(self):
+        """
+        Note: this clean method needs to be able to toggle authenticating directly
+        or not. This is needed because django axes expects an explicit request
+        parameter and otherwise the login endpoint won't work
+
+        See https://github.com/wger-project/wger/issues/1163
+        """
+        if self.authenticate_on_clean:
+            self.authenticate(self.request)
+        return self.cleaned_data
+
+    def authenticate(self, request):
+        username = self.cleaned_data.get('username')
+        password = self.cleaned_data.get('password')
+
+        if username and password:
+            self.user_cache = authenticate(
+                request=request,
+                username=username,
+                password=password,
+            )
+            if self.user_cache is None:
+                raise self.get_invalid_login_error()
+            else:
+                self.confirm_login_allowed(self.user_cache)
 
 
 class UserPreferencesForm(forms.ModelForm):
     first_name = forms.CharField(label=_('First name'), required=False)
     last_name = forms.CharField(label=_('Last name'), required=False)
     email = EmailField(
-        label=_("Email"),
-        help_text=_("Used for password resets and, optionally, e-mail reminders."),
-        required=False
+        label=_('Email'),
+        help_text=_('Used for password resets and, optionally, e-mail reminders.'),
+        required=False,
+    )
+    birthdate = forms.DateField(
+        label=_('Date of Birth'),
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'type': 'date',
+                'max': str(date.today().replace(year=date.today().year - 10)),
+                'min': str(date.today().replace(year=date.today().year - 100)),
+            },
+        ),
     )
 
     class Meta:
@@ -91,6 +137,7 @@ class UserPreferencesForm(forms.ModelForm):
             'ro_access',
             'num_days_weight_reminder',
             'birthdate',
+            'height',
         )
 
     def __init__(self, *args, **kwargs):
@@ -99,47 +146,51 @@ class UserPreferencesForm(forms.ModelForm):
         self.helper.form_class = 'wger-form'
         self.helper.layout = Layout(
             Fieldset(
-                _("Personal data"), 'email',
+                _('Personal data'),
+                'email',
                 Row(
-                    Column('first_name', css_class='form-group col-6 mb-0'),
-                    Column('last_name', css_class='form-group col-6 mb-0'),
-                    css_class='form-row'
-                ), HTML("<hr>")
+                    Column('first_name', css_class='col-6'),
+                    Column('last_name', css_class='col-6'),
+                    css_class='form-row',
+                ),
+                'birthdate',
+                'height',
+                HTML('<hr>'),
             ),
             Fieldset(
-                _("Workout reminders"),
+                _('Workout reminders'),
                 'workout_reminder_active',
                 'workout_reminder',
                 'workout_duration',
-                HTML("<hr>"),
+                HTML('<hr>'),
             ),
             Fieldset(
-                _("Other settings"),
-                "ro_access",
-                "notification_language",
-                "weight_unit",
-                "show_comments",
-                "show_english_ingredients",
-                "num_days_weight_reminder",
-                "birthdate",
-            ), ButtonHolder(Submit('submit', _("Save"), css_class='btn-success btn-block'))
+                _('Other settings'),
+                'ro_access',
+                'notification_language',
+                'weight_unit',
+                'show_comments',
+                'show_english_ingredients',
+                'num_days_weight_reminder',
+            ),
+            ButtonHolder(Submit('submit', _('Save'), css_class='btn-success btn-block')),
         )
 
 
 class UserEmailForm(forms.ModelForm):
     email = EmailField(
-        label=_("Email"),
-        help_text=_("Used for password resets and, optionally, email reminders."),
-        required=False
+        label=_('Email'),
+        help_text=_('Used for password resets and, optionally, email reminders.'),
+        required=False,
     )
 
     class Meta:
         model = User
-        fields = ('email', )
+        fields = ('email',)
 
     def clean_email(self):
         """
-        E-mail must be unique system wide
+        E-mail must be unique system-wide
 
         However, this check should only be performed when the user changes
         e-mail address, otherwise the uniqueness check will because it will find one user
@@ -147,17 +198,18 @@ class UserEmailForm(forms.ModelForm):
         we want to check that nobody else has that e-mail address.
         """
 
-        email = self.cleaned_data["email"]
+        email = self.cleaned_data['email']
         if not email:
             return email
         try:
-            user = User.objects.get(email=email)
+            # Performs a case-insensitive lookup
+            user = User.objects.get(email__iexact=email)
             if user.email == self.instance.email:
                 return email
         except User.DoesNotExist:
             return email
 
-        raise ValidationError(_("This e-mail address is already in use."))
+        raise ValidationError(_('This e-mail address is already in use.'))
 
 
 class UserPersonalInformationForm(UserEmailForm):
@@ -176,10 +228,11 @@ class PasswordConfirmationForm(Form):
     This can be used to make sure the user really wants to perform a dangerous
     action. The form must be initialised with a user object.
     """
+
     password = CharField(
-        label=_("Password"),
+        label=_('Password'),
         widget=PasswordInput,
-        help_text=_('Please enter your current password.')
+        help_text=_('Please enter your current password.'),
     )
 
     def __init__(self, user, data=None):
@@ -188,7 +241,7 @@ class PasswordConfirmationForm(Form):
         self.helper = FormHelper()
         self.helper.layout = Layout(
             'password',
-            ButtonHolder(Submit('submit', _("Delete"), css_class='btn-danger btn-block'))
+            ButtonHolder(Submit('submit', _('Delete'), css_class='btn-danger btn-block')),
         )
 
     def clean_password(self):
@@ -198,7 +251,7 @@ class PasswordConfirmationForm(Form):
         password = self.cleaned_data.get('password', None)
         if not self.user.check_password(password):
             raise ValidationError(_('Invalid password'))
-        return self.cleaned_data.get("password")
+        return self.cleaned_data.get('password')
 
 
 class RegistrationForm(UserCreationForm, UserEmailForm):
@@ -217,13 +270,15 @@ class RegistrationForm(UserCreationForm, UserEmailForm):
         self.helper = FormHelper()
         self.helper.form_class = 'wger-form'
         self.helper.layout = Layout(
-            'username', 'email',
+            'username',
+            'email',
             Row(
-                Column('password1', css_class='form-group col-6 mb-0'),
-                Column('password2', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
-            ), 'captcha',
-            ButtonHolder(Submit('submit', _("Register"), css_class='btn-success btn-block'))
+                Column('password1', css_class='col-md-6 col-12'),
+                Column('password2', css_class='col-md-6 col-12'),
+                css_class='form-row',
+            ),
+            'captcha',
+            ButtonHolder(Submit('submitBtn', _('Register'), css_class='btn-success btn-block')),
         )
 
 
@@ -237,25 +292,31 @@ class RegistrationFormNoCaptcha(UserCreationForm, UserEmailForm):
         self.helper = FormHelper()
         self.helper.form_class = 'wger-form'
         self.helper.layout = Layout(
-            'username', 'email',
+            'username',
+            'email',
             Row(
-                Column('password1', css_class='form-group col-6 mb-0'),
-                Column('password2', css_class='form-group col-6 mb-0'),
-                css_class='form-row'
-            ), ButtonHolder(Submit('submit', _("Register"), css_class='btn-success btn-block'))
+                Column('password1', css_class='col-md-6 col-12'),
+                Column('password2', css_class='col-md-6 col-12'),
+                css_class='form-row',
+            ),
+            ButtonHolder(
+                Submit('submit', _('Register'), css_class='btn-success col-sm-6 col-12'),
+                css_class='text-center',
+            ),
         )
 
 
 class FeedbackRegisteredForm(forms.Form):
     """
-    Feedback form used for logged in users
+    Feedback form used for logged-in users
     """
+
     contact = forms.CharField(
         max_length=50,
         min_length=10,
         label=_('Contact'),
         help_text=_('Some way of answering you (e-mail, etc.)'),
-        required=False
+        required=False,
     )
 
     comment = forms.CharField(
@@ -264,7 +325,7 @@ class FeedbackRegisteredForm(forms.Form):
         widget=widgets.Textarea,
         label=_('Comment'),
         help_text=_('What do you want to say?'),
-        required=True
+        required=True,
     )
 
 
@@ -272,6 +333,7 @@ class FeedbackAnonymousForm(FeedbackRegisteredForm):
     """
     Feedback form used for anonymous users (has additionally a reCAPTCHA field)
     """
+
     captcha = ReCaptchaField(
         widget=ReCaptchaV3,
         label='reCaptcha',

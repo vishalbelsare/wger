@@ -16,11 +16,14 @@
 # along with Workout Manager.  If not, see <http://www.gnu.org/licenses/>.
 
 # Django
-from django.conf.urls import url
 from django.contrib.auth.decorators import login_required
-from django.urls import path
+from django.urls import (
+    path,
+    re_path,
+)
 
 # wger
+from wger.core.views.react import ReactView
 from wger.weight import views
 from wger.weight.forms import WeightCsvImportForm
 
@@ -51,9 +54,9 @@ urlpatterns = [
         login_required(views.WeightCsvImportFormPreview(WeightCsvImportForm)),
         name='import-csv',
     ),
-    url(
+    re_path(
         'overview',
-        views.overview,
+        ReactView.as_view(div_id='react-weight-overview'),
         name='overview',
     ),
 ]

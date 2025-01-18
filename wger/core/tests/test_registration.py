@@ -43,10 +43,11 @@ class RegistrationTestCase(WgerTestCase):
         with self.settings(
             WGER_SETTINGS={
                 'USE_RECAPTCHA': True,
-                'REMOVE_WHITESPACE': False,
                 'ALLOW_REGISTRATION': True,
                 'ALLOW_GUEST_USERS': True,
                 'TWITTER': False,
+                'MASTODON': False,
+                'MIN_ACCOUNT_AGE_TO_TRUST': 21,
             }
         ):
             response = self.client.get(reverse('core:user:registration'))
@@ -55,17 +56,17 @@ class RegistrationTestCase(WgerTestCase):
         with self.settings(
             WGER_SETTINGS={
                 'USE_RECAPTCHA': False,
-                'REMOVE_WHITESPACE': False,
                 'ALLOW_REGISTRATION': True,
                 'ALLOW_GUEST_USERS': True,
                 'TWITTER': False,
+                'MASTODON': False,
+                'MIN_ACCOUNT_AGE_TO_TRUST': 21,
             }
         ):
             response = self.client.get(reverse('core:user:registration'))
             self.assertIsInstance(response.context['form'], RegistrationFormNoCaptcha)
 
     def test_register(self):
-
         # Fetch the registration page
         response = self.client.get(reverse('core:user:registration'))
         self.assertEqual(response.status_code, 200)
@@ -108,6 +109,66 @@ class RegistrationTestCase(WgerTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(count_before + 1, count_after)
 
+        # Password too short
+        registration_data['password1'] = 'abc123'
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Password is "password" (commonly used)
+        registration_data['password1'] = 'password'
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Password is entirely numeric
+        registration_data['password1'] = '123456789'
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Passwords don't match
+        registration_data['password2'] = 'quai8fai7Zaeq'
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # First password is missing
+        registration_data['password1'] = ''
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Second password is missing
+        registration_data['password2'] = ''
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Username is too long
+        long_user = (
+            'my_username_is_'
+            'wayyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy'
+            '_toooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo'
+            '_loooooooooooooooooooooooooooooooooooooooooooooooooooooooooong'
+        )
+        registration_data['username'] = long_user
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Username contains invalid symbol
+        registration_data['username'] = 'username!'
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
+        # Username is missing
+        registration_data['username'] = ''
+        response = self.client.post(reverse('core:user:registration'), registration_data)
+        self.assertFalse(response.context['form'].is_valid())
+        self.user_logout()
+
     def test_registration_deactivated(self):
         """
         Test that with deactivated registration no users can register
@@ -116,12 +177,11 @@ class RegistrationTestCase(WgerTestCase):
         with self.settings(
             WGER_SETTINGS={
                 'USE_RECAPTCHA': False,
-                'REMOVE_WHITESPACE': False,
                 'ALLOW_GUEST_USERS': True,
                 'ALLOW_REGISTRATION': False,
+                'MIN_ACCOUNT_AGE_TO_TRUST': 21,
             }
         ):
-
             # Fetch the registration page
             response = self.client.get(reverse('core:user:registration'))
             self.assertEqual(response.status_code, 302)

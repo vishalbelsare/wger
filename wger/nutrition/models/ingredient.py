@@ -16,13 +16,13 @@
 
 # Standard Library
 import logging
+import uuid as uuid
 from decimal import Decimal
+from json import JSONDecodeError
 
 # Django
 from django.conf import settings
-from django.contrib.auth.models import User
-from django.contrib.sites.models import Site
-from django.core import mail
+from django.contrib.postgres.indexes import GinIndex
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import (
@@ -31,36 +31,42 @@ from django.core.validators import (
     MinValueValidator,
 )
 from django.db import models
-from django.template.loader import render_to_string
+from django.http import HttpRequest
 from django.urls import reverse
-from django.utils import translation
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-# wger
-from wger.core.models import Language
-from wger.utils.cache import cache_mapper
-from wger.utils.constants import TWOPLACES
-from wger.utils.managers import SubmissionManager
-from wger.utils.models import (
-    AbstractLicenseModel,
-    AbstractSubmissionModel,
+# Third Party
+from openfoodfacts import API
+from requests import (
+    ConnectTimeout,
+    HTTPError,
+    ReadTimeout,
 )
 
-# Local
-from ..consts import ENERGY_FACTOR
-from .ingredient_category import IngredientCategory
+# wger
+from wger.core.models import Language
+from wger.nutrition.consts import (
+    ENERGY_FACTOR,
+    KJ_PER_KCAL,
+)
+from wger.nutrition.managers import ApproximateCountManager
+from wger.nutrition.models.ingredient_category import IngredientCategory
+from wger.nutrition.models.sources import Source
+from wger.utils.cache import cache_mapper
+from wger.utils.constants import TWOPLACES
+from wger.utils.language import load_language
+from wger.utils.models import AbstractLicenseModel
+from wger.utils.requests import wger_user_agent
 
 
 logger = logging.getLogger(__name__)
 
 
-class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
+class Ingredient(AbstractLicenseModel, models.Model):
     """
     An ingredient, with some approximate nutrition values
     """
-    objects = SubmissionManager()
-    """Custom manager"""
 
     ENERGY_APPROXIMATION = 15
     """
@@ -68,13 +74,8 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
     energy amount given (in percent).
     """
 
-    # Metaclass to set some other properties
-    class Meta:
-        ordering = [
-            "name",
-        ]
+    objects = ApproximateCountManager()
 
-    # Meta data
     language = models.ForeignKey(
         Language,
         verbose_name=_('Language'),
@@ -82,13 +83,27 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         on_delete=models.CASCADE,
     )
 
-    creation_date = models.DateField(_('Date'), auto_now_add=True)
-    update_date = models.DateField(
+    created = models.DateTimeField(
+        _('Date'),
+        auto_now_add=True,
+    )
+    """Date when the ingredient was created"""
+
+    last_update = models.DateTimeField(
         _('Date'),
         auto_now=True,
         blank=True,
         editable=False,
     )
+    """Last update time"""
+
+    uuid = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        verbose_name='UUID',
+    )
+    """Globally unique ID, to identify the ingredient across installations"""
 
     # Product infos
     name = models.CharField(
@@ -97,14 +112,17 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         validators=[MinLengthValidator(3)],
     )
 
-    energy = models.IntegerField(verbose_name=_('Energy'), help_text=_('In kcal per 100g'))
+    energy = models.IntegerField(
+        verbose_name=_('Energy'),
+        help_text=_('In kcal per 100g'),
+    )
 
     protein = models.DecimalField(
         decimal_places=3,
         max_digits=6,
         verbose_name=_('Protein'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     carbohydrates = models.DecimalField(
@@ -112,7 +130,7 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         max_digits=6,
         verbose_name=_('Carbohydrates'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     carbohydrates_sugar = models.DecimalField(
@@ -122,7 +140,7 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         null=True,
         verbose_name=_('Sugar content in carbohydrates'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     fat = models.DecimalField(
@@ -130,7 +148,7 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         max_digits=6,
         verbose_name=_('Fat'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     fat_saturated = models.DecimalField(
@@ -140,17 +158,17 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         null=True,
         verbose_name=_('Saturated fat content in fats'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
-    fibres = models.DecimalField(
+    fiber = models.DecimalField(
         decimal_places=3,
         max_digits=6,
         blank=True,
         null=True,
-        verbose_name=_('Fibres'),
+        verbose_name=_('Fiber'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     sodium = models.DecimalField(
@@ -160,7 +178,7 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         null=True,
         verbose_name=_('Sodium'),
         help_text=_('In g per 100g of product'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        validators=[MinValueValidator(Decimal(0)), MaxValueValidator(Decimal(100))],
     )
 
     code = models.CharField(
@@ -169,7 +187,15 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         blank=True,
         db_index=True,
     )
-    """Internal ID of the source database, e.g. a barcode or similar"""
+    """The product's barcode"""
+
+    remote_id = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    """ID of the product in the external source database. Used for updated during imports."""
 
     source_name = models.CharField(
         max_length=200,
@@ -214,6 +240,13 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         blank=True,
     )
 
+    # Metaclass to set some other properties
+    class Meta:
+        ordering = [
+            'name',
+        ]
+        indexes = (GinIndex(fields=['name']),)
+
     #
     # Django methods
     #
@@ -228,9 +261,9 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         """
         slug = slugify(self.name)
         if not slug:
-            return reverse('nutrition:ingredient:view', kwargs={'id': self.id})
+            return reverse('nutrition:ingredient:view', kwargs={'pk': self.id})
         else:
-            return reverse('nutrition:ingredient:view', kwargs={'id': self.id, 'slug': slug})
+            return reverse('nutrition:ingredient:view', kwargs={'pk': self.id, 'slug': slug})
 
     def clean(self):
         """
@@ -269,13 +302,9 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
             if not ((energy_upper > energy_calculated) and (energy_calculated > energy_lower)):
                 raise ValidationError(
                     _(
-                        'The total energy ({energy}kcal) is not the approximate sum of the '
-                        'energy provided by protein, carbohydrates and fat ({energy_calculated}kcal '
-                        '+/-{energy_approx}%)'.format(
-                            energy=self.energy,
-                            energy_calculated=energy_calculated,
-                            energy_approx=self.ENERGY_APPROXIMATION
-                        )
+                        f'The total energy ({self.energy}kcal) is not the approximate sum of the '
+                        f'energy provided by protein, carbohydrates and fat ({energy_calculated}kcal'
+                        f' +/-{self.ENERGY_APPROXIMATION}%)'
                     )
                 )
 
@@ -301,10 +330,22 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         logger.debug('Overwritten behaviour: comparing ingredients on values, not PK.')
         equal = True
         if isinstance(other, self.__class__):
-            for i in self._meta.fields:
+            for i in (
+                'carbohydrates',
+                'carbohydrates_sugar',
+                'creation_date',
+                'energy',
+                'fat',
+                'fat_saturated',
+                'fiber',
+                'name',
+                'protein',
+                'sodium',
+            ):
                 if (
-                    hasattr(self, i.name) and hasattr(other, i.name)
-                    and (getattr(self, i.name, None) != getattr(other, i.name, None))
+                    hasattr(self, i)
+                    and hasattr(other, i)
+                    and (getattr(self, i, None) != getattr(other, i, None))
                 ):
                     equal = False
         else:
@@ -326,65 +367,9 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
     #
     # Own methods
     #
-    def compare_with_database(self):
-        """
-        Compares the current ingredient with the version saved in the database.
-
-        If the current object has no PK, returns false
-        """
-        if not self.pk:
-            return False
-
-        ingredient = Ingredient.objects.get(pk=self.pk)
-        if self != ingredient:
-            return False
-        else:
-            return True
-
-    def send_email(self, request):
-        """
-        Sends an email after being successfully added to the database (for user
-        submitted ingredients only)
-        """
-        try:
-            user = User.objects.get(username=self.license_author)
-        except User.DoesNotExist:
-            return
-
-        if self.license_author and user.email:
-            translation.activate(user.userprofile.notification_language.short_name)
-            url = request.build_absolute_uri(self.get_absolute_url())
-            subject = _('Ingredient was successfully added to the general database')
-            context = {
-                'ingredient': self.name,
-                'url': url,
-                'site': Site.objects.get_current().domain
-            }
-            message = render_to_string('ingredient/email_new.tpl', context)
-            mail.send_mail(
-                subject,
-                message,
-                settings.WGER_SETTINGS['EMAIL_FROM'], [user.email],
-                fail_silently=True
-            )
-
     def set_author(self, request):
-        if request.user.has_perm('nutrition.add_ingredient'):
-            self.status = Ingredient.STATUS_ACCEPTED
-            if not self.license_author:
-                self.license_author = request.get_host().split(':')[0]
-        else:
-            if not self.license_author:
-                self.license_author = request.user.username
-
-            # Send email to administrator
-            subject = _('New user submitted ingredient')
-            message = _(
-                """The user {0} submitted a new ingredient "{1}".""".format(
-                    request.user.username, self.name
-                )
-            )
-            mail.mail_admins(subject, message, fail_silently=True)
+        if not self.license_author:
+            self.license_author = request.get_host().split(':')[0]
 
     def get_owner_object(self):
         """
@@ -398,6 +383,77 @@ class Ingredient(AbstractSubmissionModel, AbstractLicenseModel, models.Model):
         returns kilojoules for current ingredient, 0 if energy is uninitialized
         """
         if self.energy:
-            return Decimal(self.energy * 4.184).quantize(TWOPLACES)
+            return Decimal(self.energy * KJ_PER_KCAL).quantize(TWOPLACES)
         else:
             return 0
+
+    @property
+    def off_link(self):
+        if self.source_name == Source.OPEN_FOOD_FACTS.value:
+            return f'https://world.openfoodfacts.org/product/{self.code}/'
+
+    def get_image(self, request: HttpRequest):
+        """
+        Returns the ingredient image
+
+        If it is not available locally, it is fetched from Open Food Facts servers
+        """
+
+        if hasattr(self, 'image'):
+            return self.image
+
+        if not request.user.is_authenticated:
+            return
+
+        if not settings.WGER_SETTINGS['USE_CELERY']:
+            logger.info('Celery deactivated, skipping retrieving ingredient image')
+            return
+
+        # Let celery fetch the image
+        # wger
+        from wger.nutrition.tasks import fetch_ingredient_image_task
+
+        fetch_ingredient_image_task.delay(self.pk)
+
+    @classmethod
+    def fetch_ingredient_from_off(cls, code: str):
+        """
+        Searches OFF by barcode and creates a local ingredient from the result
+        """
+        # wger
+        from wger.nutrition.off import extract_info_from_off
+
+        logger.info(f'Searching for ingredient {code} in OFF')
+        try:
+            api = API(user_agent=wger_user_agent(), timeout=3)
+            result = api.product.get(code)
+        except JSONDecodeError as e:
+            logger.info(f'Got JSONDecodeError from OFF: {e}')
+            return None
+        except (ReadTimeout, ConnectTimeout):
+            logger.info('Timeout from OFF')
+            return None
+        except HTTPError as e:
+            logger.info(f'Got HTTPError from OFF: {e}')
+            return None
+
+        if not result:
+            logger.info('Product not found')
+            return None
+
+        try:
+            ingredient_data = extract_info_from_off(result, load_language(result['lang']).pk)
+        except (KeyError, ValueError) as e:
+            logger.debug(f'Error extracting data from OFF: {e}')
+            return None
+
+        if not ingredient_data.name:
+            return
+
+        if not ingredient_data.common_name:
+            return
+
+        ingredient = cls(**ingredient_data.dict())
+        ingredient.save()
+        logger.info(f'Ingredient found and saved to local database: {ingredient.uuid}')
+        return ingredient

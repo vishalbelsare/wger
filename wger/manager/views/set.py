@@ -18,6 +18,7 @@
 import logging
 
 # Django
+from django import forms
 from django.contrib.auth.decorators import login_required
 from django.db import models
 from django.forms.models import (
@@ -35,7 +36,11 @@ from django.shortcuts import (
 from django.urls import reverse
 
 # wger
-from wger.exercises.models import Exercise
+from wger.core.models import (
+    UserProfile,
+    WeightUnit,
+)
+from wger.exercises.models import ExerciseBase
 from wger.manager.forms import (
     SetForm,
     SettingForm,
@@ -61,7 +66,7 @@ SettingFormset = modelformset_factory(
     fields=SETTING_FORMSET_FIELDS,
     can_delete=False,
     can_order=False,
-    extra=1
+    extra=1,
 )
 
 
@@ -80,16 +85,14 @@ def create(request, day_pk):
     form = SetForm(initial={'sets': Set.DEFAULT_SETS})
 
     # If the form and all formsets validate, save them
-    if request.method == "POST":
+    if request.method == 'POST':
         form = SetForm(request.POST)
         if form.is_valid():
-            for exercise in form.cleaned_data['exercises']:
+            for base in form.cleaned_data['exercises']:
                 formset = SettingFormset(
-                    request.POST,
-                    queryset=Setting.objects.none(),
-                    prefix='exercise{0}'.format(exercise.id)
+                    request.POST, queryset=Setting.objects.none(), prefix=f'base{base.id}'
                 )
-                formsets.append({'exercise': exercise, 'formset': formset})
+                formsets.append({'exercise_base': base, 'formset': formset})
         all_valid = True
 
         for formset in formsets:
@@ -109,7 +112,7 @@ def create(request, day_pk):
                 for instance in instances:
                     instance.set = set_obj
                     instance.order = order
-                    instance.exercise = formset['exercise']
+                    instance.exercise_base = formset['exercise_base']
                     instance.save()
                     order += 1
 
@@ -129,25 +132,40 @@ def create(request, day_pk):
 
 
 @login_required
-def get_formset(request, exercise_pk, reps=Set.DEFAULT_SETS):
+def get_formset(request, base_pk, reps=Set.DEFAULT_SETS):
     """
     Returns a formset. This is then rendered inside the new set template
     """
-    exercise = Exercise.objects.get(pk=exercise_pk)
+    exercise = ExerciseBase.objects.get(pk=base_pk)
+    # Get preferred weight unit persisted in user profile
+    pref_weight_unit = UserProfile.objects.get(user=request.user).weight_unit
+    pref_weight_unit_num = WeightUnit.objects.get(name=pref_weight_unit).id
+
+    # Need to override weight_unit to preferred weight unit
+    class SettingFormOverride(forms.ModelForm):
+        class Meta:
+            model = Setting
+            fields = SETTING_FORMSET_FIELDS
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.fields['weight_unit'].initial = pref_weight_unit_num
+
     SettingFormSet = inlineformset_factory(
         Set,
         Setting,
+        form=SettingFormOverride,
         can_delete=False,
         extra=int(reps),
         fields=SETTING_FORMSET_FIELDS,
     )
     formset = SettingFormSet(
         queryset=Setting.objects.none(),
-        prefix='exercise{0}'.format(exercise_pk),
+        prefix=f'base{base_pk}',
     )
     context = {'formset': formset, 'helper': WorkoutLogFormHelper(), 'exercise': exercise}
 
-    return render(request, "set/formset.html", context)
+    return render(request, 'set/formset.html', context)
 
 
 @login_required
@@ -181,23 +199,23 @@ def edit(request, pk):
     SettingFormsetEdit = modelformset_factory(
         Setting,
         form=SettingForm,
-        fields=SETTING_FORMSET_FIELDS + ('id', ),
+        fields=SETTING_FORMSET_FIELDS + ('id',),
         can_delete=False,
         can_order=True,
-        extra=0
+        extra=0,
     )
 
     formsets = []
-    for exercise in set_obj.exercises:
-        queryset = Setting.objects.filter(set=set_obj, exercise=exercise)
-        formset = SettingFormsetEdit(queryset=queryset, prefix='exercise{0}'.format(exercise.id))
-        formsets.append({'exercise': exercise, 'formset': formset})
+    for base in set_obj.exercise_bases:
+        queryset = Setting.objects.filter(set=set_obj, exercise_base=base)
+        formset = SettingFormsetEdit(queryset=queryset, prefix=f'exercise{base.id}')
+        formsets.append({'base': base, 'formset': formset})
 
-    if request.method == "POST":
+    if request.method == 'POST':
         formsets = []
-        for exercise in set_obj.exercises:
-            formset = SettingFormsetEdit(request.POST, prefix='exercise{0}'.format(exercise.id))
-            formsets.append({'exercise': exercise, 'formset': formset})
+        for base in set_obj.exercise_bases:
+            formset = SettingFormsetEdit(request.POST, prefix=f'exercise{base.id}')
+            formsets.append({'base': base, 'formset': formset})
 
         # If all formsets validate, save them
         all_valid = True

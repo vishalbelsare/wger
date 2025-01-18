@@ -27,6 +27,8 @@ from functools import wraps
 # Django
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.core.files import File
+from django.core.files.temp import NamedTemporaryFile
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils.encoding import force_bytes
@@ -39,8 +41,7 @@ from django.utils.http import (
 logger = logging.getLogger(__name__)
 
 
-class EmailAuthBackend(object):
-
+class EmailAuthBackend:
     def authenticate(self, request, username=None, password=None):
         try:
             user = User.objects.get(email=username)
@@ -84,7 +85,6 @@ def disable_for_loaddata(signal_handler):
     @wraps(signal_handler)
     def wrapper(*args, **kwargs):
         if kwargs['raw']:
-            # print "Skipping signal for {0} {1}".format(args, kwargs)
             return
         signal_handler(*args, **kwargs)
 
@@ -144,12 +144,16 @@ def check_token(uidb64, token):
         try:
             uid = int(urlsafe_base64_decode(uidb64))
         except ValueError as e:
-            logger.info("Could not decode UID: {0}".format(e))
+            logger.info(f'Could not decode UID: {e}')
             return False
-        user = User.objects.get(pk=uid)
 
-        if user is not None and default_token_generator.check_token(user, token):
-            return True
+        try:
+            user = User.objects.get(pk=uid)
+            if user is not None and default_token_generator.check_token(user, token):
+                return True
+
+        except User.DoesNotExist:
+            return False
 
     return False
 
@@ -163,7 +167,7 @@ def password_generator(length=15):
     :return: the generated password
     """
     chars = string.ascii_letters + string.digits
-    random.seed = (os.urandom(1024))
+    random.seed = os.urandom(1024)
     for char in ('I', '1', 'l', 'O', '0', 'o'):
         chars = chars.replace(char, '')
 
@@ -213,59 +217,9 @@ def normalize_decimal(d):
     normalized = d.normalize()
     sign, digits, exponent = normalized.as_tuple()
     if exponent > 0:
-        return decimal.Decimal((sign, digits + (0, ) * exponent, 0))
+        return decimal.Decimal((sign, digits + (0,) * exponent, 0))
     else:
         return normalized
-
-
-def smart_capitalize(input):
-    """
-    A "smart" capitalizer
-
-    This is used to capitalize e.g. exercise names. This is different than python's
-    capitalize and the similar django template tag mainly because of side effects
-    when applied to all caps words. E.g. the German "KH" (Kurzhantel) is capitalized
-    to "Kh" or "ß" to "SS". Because of this, only words with more than 2 letters as
-    well as the ones starting with "ß" are ignored.
-
-    :param input: the input string
-    :return: the capitalized string
-    """
-    out = []
-    for word in input.split(' '):
-        if len(word) > 2 and word[0] != 'ß':
-            out.append(word[:1].upper() + word[1:])
-        else:
-            out.append(word)
-    return ' '.join(out)
-
-
-def levenshtein(s1, s2):
-    """
-    The Levenshtein distance
-
-    This is used as a string metric for measuring the difference between
-    two sequences. We use this to determine whether or not similar
-    exercises have been added
-
-    Source: Wikipedia
-
-    :param input: two input strings
-    :return: number of characters different between the strings
-    """
-    if len(s1) > len(s2):
-        s1, s2 = s2, s1
-
-    distances = range(len(s1) + 1)
-    for i2, c2 in enumerate(s2):
-        distances_ = [i2 + 1]
-        for i1, c1 in enumerate(s1):
-            if c1 == c2:
-                distances_.append(distances[i1])
-            else:
-                distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
-        distances = distances_
-    return distances[-1]
 
 
 def random_string(length=32):
@@ -273,3 +227,27 @@ def random_string(length=32):
     Generates a random string
     """
     return ''.join(random.choice(string.ascii_uppercase) for i in range(length))
+
+
+class BaseImage:
+    def save_image(self, retrieved_image, json_data: dict):
+        # Save the downloaded image
+        # http://stackoverflow.com/questions/1308386/programmatically-saving-image-to
+        if os.name == 'nt':
+            img_temp = NamedTemporaryFile()
+        else:
+            img_temp = NamedTemporaryFile(delete=True)
+        img_temp.write(retrieved_image.content)
+        img_temp.flush()
+
+        self.image.save(
+            os.path.basename(json_data['image']),
+            File(img_temp),
+        )
+
+    @classmethod
+    def from_json(cls, connect_to, retrieved_image, json_data: dict, generate_uuid: bool = False):
+        image: cls = cls()
+        if not generate_uuid:
+            image.uuid = json_data['uuid']
+        return image

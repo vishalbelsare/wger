@@ -51,6 +51,7 @@ class ListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
     Overview of all available admin notes
     """
+
     model = AdminUserNote
     permission_required = 'gym.add_adminusernote'
     template_name = 'admin_notes/list.html'
@@ -167,7 +168,6 @@ class DeleteView(WgerDeleteMixin, LoginRequiredMixin, PermissionRequiredMixin, D
     """
 
     model = AdminUserNote
-    fields = ('note', )
     permission_required = 'gym.delete_adminusernote'
 
     def get_success_url(self):

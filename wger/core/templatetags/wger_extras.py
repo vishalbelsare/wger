@@ -19,9 +19,7 @@ from collections.abc import Iterable
 
 # Django
 from django import template
-from django.conf import settings
 from django.templatetags.static import static
-from django.utils.html import strip_spaces_between_tags
 from django.utils.safestring import mark_safe
 from django.utils.translation import (
     gettext_lazy as _,
@@ -29,11 +27,13 @@ from django.utils.translation import (
 )
 
 # wger
+from wger.core.tests.base_testcase import get_reverse
 from wger.manager.models import Day
 from wger.utils.constants import (
     PAGINATION_MAX_TOTAL_PAGES,
     PAGINATION_PAGES_AROUND_CURRENT,
 )
+from wger.utils.language import get_language_data
 
 
 register = template.Library()
@@ -48,7 +48,7 @@ def get_current_settings(exercise, set_id):
     the template, and we are only interested on the settings that belong to the current
     set
     """
-    return exercise.setting_set.filter(set_id=set_id)
+    return exercise.exercise_base.setting_set.filter(set_id=set_id)
 
 
 @register.inclusion_tag('tags/render_day.html')
@@ -73,7 +73,6 @@ def pagination(paginator, page):
     # we muck around here to remove the pages not inmediately 'around' the current
     # one, otherwise we end up with a useless block with 300 pages.
     if paginator.num_pages > PAGINATION_MAX_TOTAL_PAGES:
-
         start_page = page.number - PAGINATION_PAGES_AROUND_CURRENT
         for i in range(page.number - PAGINATION_PAGES_AROUND_CURRENT, page.number + 1):
             if i > 0:
@@ -94,46 +93,12 @@ def pagination(paginator, page):
     return {'page': page, 'page_range': page_range}
 
 
-@register.inclusion_tag('tags/render_weight_log.html')
-def render_weight_log(log, div_uuid, user=None):
-    """
-    Renders a weight log series
-    """
-
-    return {
-        'log': log,
-        'div_uuid': div_uuid,
-        'user': user,
-    }
-
-
-@register.inclusion_tag('tags/react_static.html')
-def react_static():
-    """
-    Renders the necessary tags to load react's static files
-
-    This is a temporary solution until we have a proper react setup used
-    in more templates, then this can go to the main template
-    """
-
-    return {}
-
-
-@register.inclusion_tag('tags/license-sidebar.html')
-def license_sidebar(license, author=None):
-    """
-    Renders the license notice for exercises
-    """
-
-    return {'license': license, 'author': author}
-
-
 @register.inclusion_tag('tags/muscles.html')
 def render_muscles(muscles=None, muscles_sec=None):
     """
     Renders the given muscles
     """
-    out = {"backgrounds": []}
+    out = {'backgrounds': []}
     if not muscles and not muscles_sec:
         return out
 
@@ -146,13 +111,15 @@ def render_muscles(muscles=None, muscles_sec=None):
         out_secondary = muscles_sec if isinstance(muscles_sec, Iterable) else [muscles_sec]
 
     if out_main:
-        front_back = "front" if out_main[0].is_front else "back"
+        front_back = 'front' if out_main[0].is_front else 'back'
     else:
-        front_back = "front" if out_secondary[0].is_front else "back"
+        front_back = 'front' if out_secondary[0].is_front else 'back'
 
-    out['backgrounds'] = [i.image_url_main for i in out_main] \
-                         + [i.image_url_secondary for i in out_secondary] \
-                         + [static(f"images/muscles/muscular_system_{front_back}.svg")]
+    out['backgrounds'] = (
+        [i.image_url_main for i in out_main]
+        + [i.image_url_secondary for i in out_secondary]
+        + [static(f'images/muscles/muscular_system_{front_back}.svg')]
+    )
 
     return out
 
@@ -163,11 +130,7 @@ def language_select(context, language):
     Renders a link to change the current language.
     """
 
-    return {
-        'language_name': language[1],
-        'path': f'images/icons/flag-{language[0]}.svg',
-        'i18n_path': context['i18n_path'][language[0]]
-    }
+    return {**get_language_data(language), 'i18n_path': context['i18n_path'][language[0]]}
 
 
 @register.filter
@@ -201,6 +164,7 @@ def fa_class(class_name='', icon_type='fas', fixed_width=True):
 
     :param class_name: the CSS class name, without the "fa-" prefix
     :param fixed_width: toggle for fixed icon width
+    :param icon_type; icon type (
     :return: the complete CSS classes
     """
     css = ''
@@ -212,6 +176,11 @@ def fa_class(class_name='', icon_type='fas', fixed_width=True):
     if fixed_width:
         css += ' fa-fw'
     return mark_safe(css)
+
+
+@register.inclusion_tag('tags/modal_link.html')
+def modal_link(url: str, text: str, css_class='btn btn-success btn-sm'):
+    return {'url': get_reverse(url), 'text': text, 'css_class': css_class}
 
 
 @register.simple_tag
@@ -228,12 +197,12 @@ def trans_weight_unit(unit, user=None):
         if unit == 'kg':
             return _('kg')
         if unit == 'g':
-            return pgettext("weight unit, i.e. grams", "g")
+            return pgettext('weight unit, i.e. grams', 'g')
     else:
         if unit == 'kg':
             return _('lb')
         if unit == 'g':
-            return pgettext("weight unit, i.e. ounces", "oz")
+            return pgettext('weight unit, i.e. ounces', 'oz')
 
 
 @register.filter
@@ -247,26 +216,3 @@ def format_username(user):
         return user.email
     else:
         return user.username
-
-
-class SpacelessNode(template.base.Node):
-
-    def __init__(self, nodelist):
-        self.nodelist = nodelist
-
-    def render(self, context):
-        if settings.WGER_SETTINGS['REMOVE_WHITESPACE']:
-            return strip_spaces_between_tags(self.nodelist.render(context).strip())
-        else:
-            return self.nodelist.render(context)
-
-
-@register.tag
-def spaceless_config(parser, token):
-    """
-    This is django's spaceless tag, copied here to use our configurable
-    SpacelessNode
-    """
-    nodelist = parser.parse(('endspaceless_config', ))
-    parser.delete_first_token()
-    return SpacelessNode(nodelist)

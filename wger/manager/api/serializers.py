@@ -20,7 +20,9 @@ from rest_framework import serializers
 
 # wger
 from wger.core.api.serializers import DaysOfWeekSerializer
+from wger.core.models import DaysOfWeek
 from wger.exercises.api.serializers import (
+    ExerciseBaseInfoSerializer,
     ExerciseSerializer,
     MuscleSerializer,
 )
@@ -56,20 +58,11 @@ class WorkoutTemplateSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'creation_date', 'description', 'is_public')
 
 
-class WorkoutAndTemplateSerializer(serializers.ModelSerializer):
-    """
-    Workout or template serializer
-    """
-
-    class Meta:
-        model = Workout
-        fields = ('id', 'name', 'creation_date', 'description', 'is_template', 'is_public')
-
-
 class WorkoutSessionSerializer(serializers.ModelSerializer):
     """
     Workout session serializer
     """
+
     user = serializers.PrimaryKeyRelatedField(
         read_only=True, default=serializers.CurrentUserDefault()
     )
@@ -86,7 +79,7 @@ class WorkoutLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkoutLog
-        exclude = ('user', )
+        exclude = ('user',)
 
 
 class ScheduleStepSerializer(serializers.ModelSerializer):
@@ -106,13 +99,16 @@ class ScheduleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Schedule
-        exclude = ('user', )
+        exclude = ('user',)
 
 
 class DaySerializer(serializers.ModelSerializer):
     """
     Workout day serializer
     """
+
+    training = serializers.PrimaryKeyRelatedField(queryset=Workout.objects.all())
+    day = serializers.PrimaryKeyRelatedField(queryset=DaysOfWeek.objects.all(), many=True)
 
     class Meta:
         model = Day
@@ -123,6 +119,8 @@ class SetSerializer(serializers.ModelSerializer):
     """
     Workout setting serializer
     """
+
+    exerciseday = serializers.PrimaryKeyRelatedField(queryset=Day.objects.all())
 
     class Meta:
         model = Set
@@ -139,7 +137,7 @@ class SettingSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'set',
-            'exercise',
+            'exercise_base',
             'repetition_unit',
             'reps',
             'weight',
@@ -157,6 +155,7 @@ class MusclesCanonicalFormSerializer(serializers.Serializer):
     """
     Serializer for the muscles in the canonical form of a day/workout
     """
+
     front = serializers.ListField(child=MuscleSerializer())
     back = serializers.ListField(child=MuscleSerializer())
     frontsecondary = serializers.ListField(child=MuscleSerializer())
@@ -167,6 +166,7 @@ class WorkoutCanonicalFormExerciseImagesListSerializer(serializers.Serializer):
     """
     Serializer for settings in the canonical form of a workout
     """
+
     image = serializers.ReadOnlyField()
     is_main = serializers.ReadOnlyField()
 
@@ -175,6 +175,7 @@ class WorkoutCanonicalFormExerciseListSerializer(serializers.Serializer):
     """
     Serializer for settings in the canonical form of a workout
     """
+
     setting_obj_list = SettingSerializer(many=True)
     setting_list = serializers.ReadOnlyField()
     setting_text = serializers.ReadOnlyField()
@@ -183,13 +184,14 @@ class WorkoutCanonicalFormExerciseListSerializer(serializers.Serializer):
     weight_list = serializers.ReadOnlyField()
     comment_list = serializers.ReadOnlyField()
     image_list = WorkoutCanonicalFormExerciseImagesListSerializer(many=True)
-    obj = ExerciseSerializer()
+    obj = ExerciseBaseInfoSerializer()
 
 
 class WorkoutCanonicalFormExerciseSerializer(serializers.Serializer):
     """
     Serializer for an exercise in the canonical form of a workout
     """
+
     obj = SetSerializer()
     exercise_list = WorkoutCanonicalFormExerciseListSerializer(many=True)
     is_superset = serializers.BooleanField()
@@ -201,6 +203,7 @@ class DaysOfWeekCanonicalFormSerializer(serializers.Serializer):
     """
     Serializer for a days of week in the canonical form of a workout
     """
+
     text = serializers.ReadOnlyField()
     day_list = serializers.ListField(child=DaysOfWeekSerializer())
 
@@ -209,6 +212,7 @@ class DayCanonicalFormSerializer(serializers.Serializer):
     """
     Serializer for a day in the canonical form of a workout
     """
+
     obj = DaySerializer()
     set_list = WorkoutCanonicalFormExerciseSerializer(many=True)
     days_of_week = DaysOfWeekCanonicalFormSerializer()
@@ -219,6 +223,7 @@ class WorkoutCanonicalFormSerializer(serializers.Serializer):
     """
     Serializer for the canonical form of a workout
     """
+
     obj = WorkoutSerializer()
     day_list = DayCanonicalFormSerializer(many=True)
     muscles = MusclesCanonicalFormSerializer()

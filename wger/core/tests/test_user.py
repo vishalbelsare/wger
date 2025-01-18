@@ -11,15 +11,20 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# Standard Library
+import datetime
+from unittest import TestCase
 
 # Django
 from django.contrib.auth.models import User
+from django.http import HttpRequest
 from django.urls import (
     reverse,
     reverse_lazy,
 )
 
 # wger
+from wger.core.demo import create_temporary_user
 from wger.core.tests.base_testcase import (
     WgerAccessTestCase,
     WgerEditTestCase,
@@ -259,3 +264,76 @@ class UserDetailPageTestCase2(WgerAccessTestCase):
         'member1',
         'member2',
     )
+
+
+class UserTrustworthinessTestCase(WgerTestCase):
+    request = HttpRequest()
+
+    def test_temporary_user_no_permissions(self):
+        """
+        Tests that temporary users do not pass the "is trustworthy" check and do not have
+        any permissions.
+        """
+
+        # Get a temporary user
+        user = create_temporary_user(self.request)
+
+        # User does not pass trustworthiness check
+        self.assertFalse(user.userprofile.is_trustworthy)
+
+    def test_is_trustworthy_new(self):
+        """
+        Tests that new accounts are not considered trustworthy
+        """
+
+        # Get a temporary user
+        user = create_temporary_user(self.request)
+        user.userprofile.is_temporary = False
+        user.userprofile.email_verified = True
+        user.date_joined = datetime.datetime.now()
+
+        # User does not pass trustworthiness check
+        self.assertFalse(user.userprofile.is_trustworthy)
+
+    def test_is_trustworthy_old_no_email(self):
+        """
+        Tests that users without verified email are not considered trustworthy
+        """
+
+        # Get a temporary user
+        user = create_temporary_user(self.request)
+        user.userprofile.is_temporary = False
+        user.userprofile.email_verified = False
+        user.date_joined = datetime.datetime.now() - datetime.timedelta(days=30)
+
+        # User does not pass trustworthiness check
+        self.assertFalse(user.userprofile.is_trustworthy)
+
+    def test_is_trustworthy_old_email(self):
+        """
+        Tests that old accounts are not considered trustworthy
+        """
+
+        # Get a temporary user
+        user = create_temporary_user(self.request)
+        user.userprofile.is_temporary = False
+        user.userprofile.email_verified = True
+        user.date_joined = datetime.datetime.now() - datetime.timedelta(days=30)
+
+        # User does not pass trustworthiness check
+        self.assertTrue(user.userprofile.is_trustworthy)
+
+    def test_is_trustworthy_admin(self):
+        """
+        Tests that superusers are always trustworthy
+        """
+
+        # Get a temporary user
+        user = create_temporary_user(self.request)
+        user.is_superuser = True
+        user.userprofile.is_temporary = False
+        user.userprofile.email_verified = False
+        user.date_joined = datetime.datetime.now()
+
+        # User does not pass trustworthiness check
+        self.assertTrue(user.userprofile.is_trustworthy)
